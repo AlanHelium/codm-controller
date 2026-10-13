@@ -1,0 +1,5 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><AssemblyName>CODMControllerProbeUninstaller</AssemblyName><Version>3.4.2</Version><ApplicationManifest>app.manifest</ApplicationManifest><ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode></PropertyGroup>
+ <ItemGroup><Compile Include="../shared/*.cs" Link="Shared/%(Filename)%(Extension)" /></ItemGroup>
+ <ItemGroup><EmbeddedResource Include="../../payload/必看 README.TXT" LogicalName="payload.readme" /></ItemGroup>
+</Project>

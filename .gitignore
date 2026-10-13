@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+artifacts/
+installer/dist/
+installer/待发布/
+installer/payload/uninstaller-build/
+installer/payload/CODMControllerProbe.exe
+installer/payload/CODMControllerProbeUninstaller.exe
+installer/payload/manifest.json
+.vs/
+*.user
+*.log
+installation.json
+settings.json

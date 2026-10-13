@@ -1,0 +1,82 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>CODMControllerProbe</AssemblyName>
+    <RootNamespace>CODMControllerProbe</RootNamespace>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\icons\app.ico</ApplicationIcon>
+    <Version>3.4.2</Version>
+    <Product>CODM Controller Protocol Probe</Product>
+    <Description>诊断工具：读取物理手柄输入，创建虚拟 Xbox360 / DS4 手柄，用于测试游戏识别哪种协议。</Description>
+    <!-- 免费版 Demo 构建：dotnet publish -p:FreeDemo=true → 锁定免费版、禁用版本切换 -->
+    <DefineConstants Condition="'$(FreeDemo)'=='true'">$(DefineConstants);FREEDEMO</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="Nefarius.ViGEm.Client" Version="1.21.256" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 排除子项目/工具目录：其源文件与 obj/bin 生成物不得进入主项目编译 -->
+    <Compile Remove="_uitest/**" />
+    <EmbeddedResource Remove="_uitest/**" />
+    <None Remove="_uitest/**" />
+    <Compile Remove="uninstaller/**" />
+    <EmbeddedResource Remove="uninstaller/**" />
+    <None Remove="uninstaller/**" />
+    <Content Remove="uninstaller/**" />
+    <Compile Remove="share-doc/**" />
+    <None Remove="share-doc/**" />
+    <Compile Remove="v2.2.1-fixed/**" />
+    <EmbeddedResource Remove="v2.2.1-fixed/**" />
+    <None Remove="v2.2.1-fixed/**" />
+    <Content Remove="v2.2.1-fixed/**" />
+    <Compile Remove="installer-bundle/**" />
+    <EmbeddedResource Remove="installer-bundle/**" />
+    <None Remove="installer-bundle/**" />
+    <Content Remove="installer-bundle/**" />
+    <Compile Remove="draft_df649cee_folder/**" />
+    <None Remove="draft_df649cee_folder/**" />
+    <Compile Remove="doc-fetch-resources/**" />
+    <None Remove="doc-fetch-resources/**" />
+    <Compile Remove="基线逆向-20261005-2136/**" />
+    <None Remove="基线逆向-20261005-2136/**" />
+    <Compile Remove="基线正式版-根目录源码/**" />
+    <None Remove="基线正式版-根目录源码/**" />
+    <Compile Remove="publish*/**" />
+    <None Remove="publish*/**" />
+    <Content Remove="publish*/**" />
+  </ItemGroup>
+
+  <!-- 发布时把驱动安装器一并复制到输出目录：HidHide（实体手柄隐藏）+ ViGEmBus（虚拟 DS4） -->
+
+
+  <ItemGroup>
+    <!-- 嵌入美术资源：单文件自包含发布后运行时无外部文件，只能从程序集内加载 -->
+    <EmbeddedResource Include="assets\icons\app-128.png" LogicalName="assets.app-128.png" />
+    <EmbeddedResource Include="assets\icons\app.ico" LogicalName="assets.app.ico" />
+    <!-- 卡通玩家角色（拿手柄玩游戏的小卡通人物，3D 黏土风）：顶部头像 + 右下角小图 -->
+    <EmbeddedResource Include="assets\icons\character-head.png" LogicalName="assets.character_head.png" />
+    <EmbeddedResource Include="assets\icons\character-corner.png" LogicalName="assets.character_corner.png" />
+    <!-- 真人语音提示（用户自有录音，WAV，NAudio 播放，零版权风险） -->
+    <EmbeddedResource Include="assets\voice\voice-own-ok.wav" LogicalName="assets.voice.voice_own_ok.wav" />
+    <EmbeddedResource Include="assets\voice\voice-own-letsgo.wav" LogicalName="assets.voice.voice_own_letsgo.wav" />
+    <EmbeddedResource Include="assets\voice\voice-own-sample3.wav" LogicalName="assets.voice.voice_own_sample3.wav" />
+    <!-- 主界面射击游戏主题背景图（手柄玩射击游戏，暖米白+橙，中央留白衬内容） -->
+    <EmbeddedResource Include="assets\controllers\*.png" LogicalName="assets.controllers.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="assets\controller-studio.png" LogicalName="assets.controller-studio.png" />
+    <EmbeddedResource Include="assets\bg-shooter.jpg" LogicalName="assets.bg-shooter.jpg" />
+    <!-- 解锁页微信赞赏码（固定码，不随时间变化；买家扫码付款） -->
+    <EmbeddedResource Include="assets\qr-reward.png" LogicalName="assets.qr-reward.png" />
+    <!-- 内嵌驱动安装器：单文件分发，缺驱动时自动释放并静默安装（体验=一个程序全搞定） -->
+  </ItemGroup>
+
+</Project>
