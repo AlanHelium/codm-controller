@@ -175,7 +175,10 @@ private UiStack? _gainXBlock, _gainYBlock;
 
     private void SwitchStick(int idx)
     {
+        bool wasLoading = _loadingParameters;
         _loadingParameters = true;
+        try
+        {
         _idx = idx;
 
         void SetActive(Button b, bool active)
@@ -226,6 +229,13 @@ private UiStack? _gainXBlock, _gainYBlock;
             lblGainYVal!.Text = $"{c.GainY:0.00}x";
         }
         canvas.Invalidate();
+        }
+        finally
+        {
+            // Suppress callbacks only while populating this stick's controls.
+            // Restore even if layout or a value assignment fails.
+            _loadingParameters = wasLoading;
+        }
     }
 
     /// <summary>档位切换：回调 MainForm 应用档位（重建曲线+保存+主页同步），画布实时反映新档曲线。</summary>

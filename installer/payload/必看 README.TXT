@@ -1,4 +1,4 @@
-【v3.4.2：全部功能免费】
+【v3.4.3：全部功能免费】
 已取消 Pro、激活码和付费门槛。语音、自定义TTS、震动及其他设置全部开放。
 右上角「支持作者」在主窗口内显示原始赞赏码；赞赏完全自愿，不影响任何功能。
 
@@ -15,7 +15,7 @@ CODMControllerProbe.exe；首次准备需要管理员权限，已有组件会复
 同样使用它们的副本，可在清理界面取消相应勾选，不会删除另一副本的程序目录。
 先完成清理再移动或删除解压目录；仅删除文件夹无法清除系统驱动和用户配置。
 
-CODM 手柄转换器 v3.4.2
+CODM 手柄转换器 v3.4.3
 作者：Burrito　　使用前请先读完本文件
 ============================================================
 
@@ -35,7 +35,7 @@ CODM 手柄转换器 v3.4.2
 %LOCALAPPDATA%\Programs\Burrito\CODMControllerProbe
 
 所选安装目录中包含：
-- CODMControllerProbe.exe：已验证的 v3.4.2 主程序。
+- CODMControllerProbe.exe：已验证的 v3.4.3 主程序。
 - CODMControllerProbeUninstaller.exe：卸载与重启后复查程序。
 - 必看 README.TXT：本教学、注意事项和说明。
 - 赞赏码.png：作者提供的赞赏码原图，独立文件。
@@ -95,6 +95,8 @@ WASD 方向长按会发送重复消息，Shift 本身不自动重复。
 
 v3.4.1 输入修复已由用户使用 DS5 USB 实测：原生手感、跳跃/换弹交换和 WASD 外圈奔跑可用。
 v3.4.2 保留相同输入核心，并完成免费功能、设备隔离和恢复检查。
+v3.4.3 修复曲线编辑页滑块不生效的问题；41 项回归检查验证实时曲线、参数保存、
+切换摇杆和重开页面。输入核心未修改；本次未重新进行真实游戏或设备隔离测试。
 DS4、DSE 以及不同 Xbox 硬件仍需逐台验证；识别到型号不等于所有功能已实测通过。
 
 五、卸载与“是否清理干净”
@@ -165,7 +167,7 @@ HidHide：https://docs.nefarius.at/projects/HidHide/
 ViGEmBus：https://docs.nefarius.at/projects/ViGEm/How-to-Install/
 SmartScreen：https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation
 
-程序版本：3.4.2　　本安装包制作日期：2026-10-13
+程序版本：3.4.3　　本安装包制作日期：2026-10-13
 
 九、第三方驱动许可原文
 ------------------------------------------------------------

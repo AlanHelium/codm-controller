@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace CODMControllerProbe;
@@ -30,7 +30,7 @@ static class Program
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) =>
             Trace("UnobservedTask: " + e.Exception);
 
-        Trace("Main 进入 args=" + (args.Length > 0 ? args[0] : "无") + " PID=" + Environment.ProcessId + " 版本=v3.4.2");
+        Trace("Main 进入 args=" + (args.Length > 0 ? args[0] : "无") + " PID=" + Environment.ProcessId + " 版本=v3.4.3");
         // 1ms 计时精度：让输出循环的 1000Hz 节拍真实生效（否则 Sleep(1) 实际 15.6ms）
         try { timeBeginPeriod(1); } catch { }
 
