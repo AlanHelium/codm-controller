@@ -1,4 +1,4 @@
-﻿using CODMControllerProbe;
+using CODMControllerProbe;
 
 namespace Burrito.Installer;
 
@@ -41,14 +41,14 @@ public sealed class UninstallRunner(Action<Update> progress)
             if(result.RestartRequired)
             {
                 record.UninstallPending=true;record.PendingBoot=ExitPolicy.Boot;record.RemoveDrivers=removeDrivers;record.DeleteData=deleteData;record.PendingReasons=result.Details;record.Save();
-                result.Retained.AddRange(SafeFiles.RemoveInstalledFiles(record.Root,true));WindowsIntegration.ResumeAfterReboot(record);
+                result.Retained.AddRange(SafeFiles.RemoveInstalledFiles(record.Root,true));var shortcutWarning=WindowsIntegration.ResumeAfterReboot(record);if(shortcutWarning!=null)Log(shortcutWarning);
                 result.Success=driversOk&&result.Retained.Count==(deleteData?0:1);
                 result.Summary="程序清理已执行，驱动待重启；保留卸载器与官方包用于重启后复查";return result;
             }
             // Check that the registration is ours before deleting the recovery executable.
             WindowsIntegration.Unregister(record);
             var leftovers=SafeFiles.RemoveInstalledFiles(record.Root,false);result.Retained.AddRange(leftovers);
-            if(leftovers.Count>0){WindowsIntegration.RecoveryRegistration(record);result.Summary="部分文件未删除，已保留卸载入口；请查看剩余项后重试";return result;}
+            if(leftovers.Count>0){var shortcutWarning=WindowsIntegration.RecoveryRegistration(record);if(shortcutWarning!=null)Log(shortcutWarning);result.Summary="部分文件未删除，已保留卸载入口；请查看剩余项后重试";return result;}
             result.Success=true;result.CompleteCleanup=removeDrivers&&deleteData&&result.Retained.Count==0;
             result.Summary=result.CompleteCleanup?"程序、配置与驱动已核验移除；关闭窗口后清理卸载器运行缓存":"卸载完成，保留项已按你的选择列出";
             Log(result.Summary);
@@ -57,7 +57,7 @@ public sealed class UninstallRunner(Action<Update> progress)
         {
             if(recovery!=null&&File.Exists(Path.Combine(recovery.Root,Product.RecordName)))
             {
-                try{string helper=Path.Combine(recovery.Root,Product.UninstallName);if(!File.Exists(helper))File.Copy(Environment.ProcessPath!,helper);WindowsIntegration.RecoveryRegistration(recovery);}catch(Exception repair){result.Details.Add("恢复卸载入口未完成："+repair.Message);}
+                try{string helper=Path.Combine(recovery.Root,Product.UninstallName);if(!File.Exists(helper))File.Copy(Environment.ProcessPath!,helper);var shortcutWarning=WindowsIntegration.RecoveryRegistration(recovery);if(shortcutWarning!=null)result.Details.Add(shortcutWarning);}catch(Exception repair){result.Details.Add("恢复卸载入口未完成："+repair.Message);}
             }
             result.Summary="卸载未完成："+ex.Message;result.Details.Add(ex.Message);progress(new(2,result.Summary));
         }

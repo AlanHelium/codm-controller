@@ -9,7 +9,7 @@ public sealed class SetupRunner(Action<Update> progress)
 {
     public async Task<Outcome> Run(string input)
     {
-        var outcome=new Outcome();string root="";
+        var outcome=new Outcome();string root="";string? shortcutWarning=null;
         void Log(string text){progress(new(1,text));if(root.Length>0&&Directory.Exists(root))File.AppendAllText(Path.Combine(root,"install.log"),text+Environment.NewLine);}
         try
         {
@@ -36,8 +36,11 @@ public sealed class SetupRunner(Action<Update> progress)
                 }
                 var record=new InstallRecord{Root=root,DriversPreviouslyPresent=Drivers.Packages.ToDictionary(d=>d.Name,d=>Drivers.Inspect(d.Name).Ready),ComponentRestartRequired=prior?.ComponentRestartRequired==true&&CODMControllerProbe.ComponentProbe.SameBoot(prior.ComponentPreparedBoot,CODMControllerProbe.ComponentProbe.BootStamp),ComponentPreparedBoot=prior?.ComponentPreparedBoot??0};
                 Directory.CreateDirectory(root);record.Save();
-                foreach(var payload in payloads){string to=SafeFiles.Child(root,payload.Name);Directory.CreateDirectory(Path.GetDirectoryName(to)!);File.Copy(SafeFiles.Child(staging,payload.Name),to,true);Log("已安装："+payload.Name);}
-                WindowsIntegration.Register(record);Log("已注册卸载入口与开始菜单快捷方式");
+                foreach(var payload in payloads){string to=SafeFiles.Child(root,payload.Name);Directory.CreateDirectory(Path.GetDirectoryName(to)!);File.Copy(SafeFiles.Child(staging,payload.Name),to,true);Log("已复制文件："+payload.Name);}
+                WindowsIntegration.Register(record);Log("已注册系统卸载入口");
+                shortcutWarning=UnicodeShortcut.TryCreate(root,Product.MainName,Product.Shortcut);
+                if(shortcutWarning==null)Log("已创建开始菜单快捷方式");
+                else{outcome.HasWarnings=true;outcome.Details.Add(shortcutWarning);Log(shortcutWarning+" 软件文件与驱动安装将继续。");}
             }
             finally{SafeFiles.DeleteOwnedTree(staging,staging);}
             progress(new(1,"准备官方手柄驱动"));var drivers=await Drivers.Install(root,Log);outcome.RestartRequired=drivers.Reboot;outcome.Details.AddRange(drivers.States.Select(s=>s.Name+"："+s.Summary));
@@ -49,6 +52,7 @@ public sealed class SetupRunner(Action<Update> progress)
             outcome.Details.Add(readiness.Message);
             foreach(var state in new[]{readiness.Vigem,readiness.HidHide})outcome.Details.Add(state.Name+"："+(state.RuntimeReady?"接口可用":state.Installed?"已安装，接口尚未就绪":"尚未安装")+(state.Error.Length>0?"；"+state.Error:""));
             outcome.Summary=!drivers.Success?"安装未完成，已保留卸载入口和详细记录，可修复或卸载":outcome.RestartRequired?"文件与组件已安装，Windows 需要重启完成更新；可稍后重启":outcome.ReadyToLaunch?"安装完成，组件接口已就绪，可以开始使用":"文件与组件已安装，接口尚未就绪；请重新检查或重插手柄";
+            if(shortcutWarning!=null)outcome.Summary+="；开始菜单快捷方式未创建，请从安装目录打开软件";
             progress(new(2,outcome.Summary));
         }
         catch(Exception ex){outcome.Summary="安装未完成："+ex.Message;outcome.Details.Add(ex.Message);progress(new(2,outcome.Summary));}

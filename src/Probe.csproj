@@ -12,7 +12,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\icons\app.ico</ApplicationIcon>
-    <Version>3.4.4</Version>
+    <Version>3.4.5</Version>
     <Product>CODM Controller Protocol Probe</Product>
     <Description>诊断工具：读取物理手柄输入，创建虚拟 Xbox360 / DS4 手柄，用于测试游戏识别哪种协议。</Description>
     <!-- 免费版 Demo 构建：dotnet publish -p:FreeDemo=true → 锁定免费版、禁用版本切换 -->

@@ -123,7 +123,7 @@ public sealed class WizardForm:Form
     }
     public void ShowResult(Outcome result)
     {
-        _outcome=result;_log.Visible=true;_status.Text=result.Summary;_status.ForeColor=result.Success&&(!_install||result.ReadyToLaunch)&&!result.RestartRequired?Color.FromArgb(103,207,158):Color.FromArgb(244,173,111);
+        _outcome=result;_log.Visible=true;_status.Text=result.Summary;_status.ForeColor=result.Success&&(!_install||result.ReadyToLaunch)&&!result.RestartRequired&&!result.HasWarnings?Color.FromArgb(103,207,158):Color.FromArgb(244,173,111);
         foreach(string line in result.Details.Concat(result.Retained))_log.AppendText(Environment.NewLine+line);
         if(result.RestartRequired){_primary.Text="立即重启";_close.Text="稍后重启";_primary.Visible=true;}
         else {_primary.Text=_install&&result.Success?(result.ReadyToLaunch?"启动软件":"重新检查"):"重试";_primary.Visible=_install||!result.Success;_close.Text="完成";}

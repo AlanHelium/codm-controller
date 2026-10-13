@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -28,12 +28,10 @@ public static class WindowsIntegration
         k.SetValue("DisplayName",Product.Name);k.SetValue("DisplayVersion",Product.Version);k.SetValue("Publisher","Burrito");k.SetValue("InstallLocation",r.Root);
         k.SetValue("DisplayIcon",Path.Combine(r.Root,Product.MainName));k.SetValue("UninstallString","\""+Path.Combine(r.Root,Product.UninstallName)+"\"");k.SetValue("NoModify",1);k.SetValue("NoRepair",1);
         k.SetValue("EstimatedSize",(int)(Product.PayloadNames.Sum(n=>new FileInfo(SafeFiles.Child(r.Root,n)).Length)/1024));
-        CreateShortcut(r.Root,Product.MainName,Product.Shortcut);
     }
     public static void CreateShortcut(string root,string exe,string link)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(link)!);dynamic shell=Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
-        try{dynamic shortcut=shell.CreateShortcut(link);try{shortcut.TargetPath=Path.Combine(root,exe);shortcut.WorkingDirectory=root;shortcut.Description=Product.Name;shortcut.Save();}finally{Marshal.FinalReleaseComObject(shortcut);}}finally{Marshal.FinalReleaseComObject(shell);}
+        UnicodeShortcut.Create(root,exe,link);
     }
     public static void Unregister(InstallRecord r)
     {
@@ -45,18 +43,18 @@ public static class WindowsIntegration
         if(File.Exists(Product.Shortcut))File.Delete(Product.Shortcut);
         using var runOnce=machine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",true);runOnce?.DeleteValue("CODMControllerProbeCleanup",false);
     }
-    public static void ResumeAfterReboot(InstallRecord r)
+    public static string? ResumeAfterReboot(InstallRecord r)
     {
         using var machine=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64);using var key=machine.CreateSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce");
         key.SetValue(CleanupName(r),"\""+Path.Combine(r.Root,Product.UninstallName)+"\" --resume");
-        if(!r.Portable)CreateShortcut(r.Root,Product.UninstallName,Product.Shortcut);
+        return r.Portable?null:UnicodeShortcut.TryCreate(r.Root,Product.UninstallName,Product.Shortcut);
     }
-    public static void RecoveryRegistration(InstallRecord r)
+    public static string? RecoveryRegistration(InstallRecord r)
     {
-        if(r.Portable)return;
+        if(r.Portable)return null;
         using var machine=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64);using var k=machine.CreateSubKey(Product.RegistryKey);
         k.SetValue("DisplayName",Product.Name+"（清理待完成）");k.SetValue("DisplayVersion",Product.Version);k.SetValue("Publisher","Burrito");k.SetValue("InstallLocation",r.Root);k.SetValue("UninstallString","\""+Path.Combine(r.Root,Product.UninstallName)+"\"");
-        CreateShortcut(r.Root,Product.UninstallName,Product.Shortcut);
+        return UnicodeShortcut.TryCreate(r.Root,Product.UninstallName,Product.Shortcut);
     }
     private static string CleanupName(InstallRecord r)=>r.Portable?"CODMControllerProbeCleanup-"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(r.Root.ToUpperInvariant())))[..12]:"CODMControllerProbeCleanup";
     public static bool Restart()

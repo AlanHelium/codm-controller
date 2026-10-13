@@ -46,3 +46,11 @@ dotnet run --project src/_uitest/FirstRunChecks.csproj -c Release -- artifacts/f
 ```
 
 该检查需要本机已经安装且生效的 ViGEmBus 和 HidHide；不会替你安装组件。它会创建短暂的测试进程、一个中立虚拟手柄并读取组件接口，检查完恢复退出，不改写个人配置或隐藏列表。维护后端 44 项和滑块 54 项回归检查通过。本机复用现有驱动升级 v3.4.4 后接口就绪，无需重启；真实 DS5 USB 输入、隔离、映射交换及恢复检查通过。该结果不等同于在全新 Windows 上首次安装驱动的测试。Windows 若明确要求重启，界面会保留真实的待重启状态，允许选择稍后重启，不自动重启。
+v3.4.5 快捷方式修复验证：Unicode 快捷方式 81 项（简体、繁体、日文、emoji 路径；STA/MTA；覆盖与失败保留；无临时文件残留），快捷方式警告界面 3 项，维护后端 44 项通过。测试在独立临时目录运行，不创建系统开始菜单入口，不改动共享驱动或个人配置。未在报告问题的用户机器上实测；需要该用户用新安装包确认。
+
+```powershell
+dotnet run --project installer/源码/tests/ShortcutChecks.csproj -c Release -- artifacts/shortcut-check.json
+dotnet run --project installer/源码/tests/ShortcutUiChecks.csproj -c Release -- artifacts/shortcut-ui-check
+```
+
+修复使用 IShellLinkW 与 IPersistFile，写入成功后才覆盖既有快捷方式。系统卸载登记仍为必需步骤；只有开始菜单快捷方式创建视为可恢复的警告，不能掩盖驱动安装或接口检查失败。
