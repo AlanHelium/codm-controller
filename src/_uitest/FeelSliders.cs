@@ -20,6 +20,13 @@ static class FeelSliderChecks
     [STAThread]static void Main(string[] args)
     {
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);Application.EnableVisualStyles();
+        var defaults=AppSettings.CreateDefault();AppSettings.EnsurePacks(defaults);
+        Check(defaults.ExpWasdMove&&!defaults.EnableLeftStickRun&&!defaults.ExpTouchMove,"WASD must be the only enabled default movement scheme");
+        Check(defaults.Packs.Any(p=>p.Key==defaults.ActivePack),"Default curve key does not exist");
+        Near(defaults.Right.ToCurve().Anti,.24f,"Default hip anti-deadzone is not 24%");
+        foreach(var pack in defaults.Packs)Near(pack.Right.ToCurve().Anti,.24f,"Preset hip anti-deadzone is not 24%");
+        defaults.ActivePack="obsolete-name";AppSettings.EnsurePacks(defaults);
+        Check(defaults.Packs.Any(p=>p.Key==defaults.ActivePack),"Invalid curve key did not recover to an existing preset");
         typeof(MainForm).Assembly.GetType("CODMControllerProbe.UiPreview")!.GetProperty("Enabled",BindingFlags.Static|BindingFlags.Public|BindingFlags.NonPublic)!.SetValue(null,true);
         string folder=args[0];Directory.CreateDirectory(folder);
         string actualSettings=SettingsStore.Path_;
@@ -79,6 +86,18 @@ static class FeelSliderChecks
         Check(reloaded.FreeSensLevel==19&&reloaded.OutputHz==500,"Main sliders were not persisted");
         Check(before==Hash(),"Offscreen checks changed personal configuration");
         using(var bitmap=new Bitmap(main.Width,main.Height)){main.DrawToBitmap(bitmap,new Rectangle(Point.Empty,main.Size));bitmap.Save(Path.Combine(folder,"滑块修复-曲线编辑.png"));}
+        feel.Close();Application.DoEvents();
+        Call(main,"ResetToDefaults");Application.DoEvents();
+        Check(Settings(main).ExpWasdMove&&!Settings(main).EnableLeftStickRun&&!Settings(main).ExpTouchMove,"Restore defaults did not apply WASD exclusively to running state");
+        Near(Field<FeelCurve>(main,"_masterRight").Anti,.24f,"Restore defaults did not apply 24% hip anti-deadzone");
+        Call(main,"ShowStudioSection",3);Application.DoEvents();
+        var movement=Children(main).OfType<SettingsForm>().Single();
+        var boxes=Children(movement).OfType<CheckBox>().ToArray();
+        Check(boxes.Single(c=>c.Text.Contains("WASD")).Checked,"Default WASD checkbox was not selected");
+        Check(!boxes.Single(c=>c.Text.Contains("L3")).Checked,"Default L3 checkbox was unexpectedly selected");
+        Check(Children(movement).OfType<Label>().Any(l=>l.Text.Contains("长按奔跑")||l.Text.Contains("Hold to sprint")),"Movement page is missing the hold-to-sprint hint");
+        using(var bitmap=new Bitmap(main.Width,main.Height)){main.DrawToBitmap(bitmap,new Rectangle(Point.Empty,main.Size));bitmap.Save(Path.Combine(folder,"默认WASD-奔跑提示.png"));}
+        Check(before==Hash(),"Default preview changed personal configuration");
         main.Close();
         File.WriteAllText(Path.Combine(folder,"滑块回归检查.json"),JsonSerializer.Serialize(new{Passed=true,Assertions=checks,PointerAndKeyboard=true,AllThreeSticks=true,LiveCurvesAndSettings=true,ActualUserSettingsUnchanged=true},new JsonSerializerOptions{WriteIndented=true}));
         Console.WriteLine($"Feel slider checks passed: {checks} assertions; actual user settings unchanged");

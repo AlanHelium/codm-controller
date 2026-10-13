@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Nefarius.ViGEm.Client;
@@ -428,6 +428,12 @@ public partial class MainForm : Form
         _interactKey = d.InteractKey;
         _map.MeleePing = d.MeleeKey;
         _enableRun = d.EnableLeftStickRun;
+        ResetExpMoveKeys();
+        _expWasdMove = d.ExpWasdMove;
+        _expWasdThreshold = d.ExpWasdThreshold;
+        _expTouchMove = d.ExpTouchMove && !_expWasdMove;
+        _expTouchRadius = d.ExpTouchRadius;
+        _expTouchSens = d.ExpTouchSens;
         _autoRun = false;                          // 自动奔跑方案暂时移除：恒关闭
         _runGameDefaultRun = true;
         _runReturnWalk = true;

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 
@@ -92,7 +92,7 @@ public class AppSettings
 
     /// <summary>左摇杆奔跑：左摇杆轴保持全向移动；按下 L3（左摇杆按键）注入一次 H（静步/奔跑切换键）。
     /// true=启用；false=禁用（左摇杆只转发摇杆数据）。</summary>
-    public bool EnableLeftStickRun { get; set; } = true;
+    public bool EnableLeftStickRun { get; set; } = false;
 
     /// <summary>自动奔跑：开启后推杆总幅度跨越 RunThreshold 的边沿自动注入一次 H（轻推走路/重推奔跑），无需按 L3；
     /// 关闭后仅按 L3 手动切换。物理 L3 两种模式下都始终可用。</summary>
@@ -124,8 +124,8 @@ public class AppSettings
     /// 默认关闭；开启后仅在有 Sony HID 手柄且此开关为 true 时生效，Xbox/第三方手柄无陀螺仪不受影响。</summary>
     public bool GyroEnabled { get; set; } = false;
 
-    /// <summary>实验：左摇杆 → WASD（外圈 Shift 冲刺），屏蔽左摇杆轴输出（默认关）。</summary>
-    public bool ExpWasdMove { get; set; } = false;
+    /// <summary>左摇杆 → WASD（外圈 Shift 冲刺），屏蔽左摇杆轴输出（默认开）。</summary>
+    public bool ExpWasdMove { get; set; } = true;
 
     /// <summary>实验 WASD 外圈阈值 50~99（默认 85%）：幅度达到该值按下 Shift 冲刺。</summary>
     public int ExpWasdThreshold { get; set; } = 85;
@@ -290,8 +290,8 @@ public class AppSettings
     /// 免费版出厂默认手感（COD 正作转译，2026-10-05 更新）：
     /// 默认激活封装 = COD20 · 动态（p=1.45 加速曲线，轻推慢、推满快，正作 Dynamic 手感）。
     /// 左摇杆：反死区 15%、恒直线、灵敏度 1.0/1.0（跑动/移动，线性最直觉）。
-    /// 右·腰射：反死区 22%、动态曲线（25%→32.5%、50%→50.5%、75%→73.4%）、灵敏度 1.0/0.9。
-    /// 右·开镜：反死区 24%、动态曲线（25%→34.2%、50%→51.8%、75%→74.1%）、灵敏度 1.0/0.9。
+    /// 右·腰射：反死区 24%、动态 S 曲线、灵敏度 1.0/0.9。
+    /// 右·开镜：反死区 25%、动态 S 曲线、灵敏度 1.0/0.9。
     /// 3 套封装（COD20 × 动态/线性/标准）详见 BuildDefaultPacks。
     /// 键位：A=跳跃 B=下蹲 X=换弹 Y=切枪（XInput 默认）。
     /// 长按 B 快速趴下默认 150ms（Shift 奔跑功能已按用户要求移除，奔跑在游戏内设置）。
@@ -305,7 +305,7 @@ public class AppSettings
                 new[] { 0f, 0.15f },
                 new[] { 1f, 1f }),
             Right = CurveData.Of(1f, 0.9f,
-                new[] { 0f, 0.22f },
+                new[] { 0f, 0.24f },
                 new[] { 0.35176992f, 0.39615384f },
                 new[] { 0.6017699f, 0.6f },
                 new[] { 1f, 1f }),
@@ -334,7 +334,8 @@ public class AppSettings
             EnableFastInteract = false,
             InteractKey = 0x4000, // 快速交互默认触发键 = X（键位修正可录制更改）
             MeleeKey = 0x0080, // 近战/标点默认绑定 R3（DS 原生近战+标点键）
-            EnableLeftStickRun = true,
+            EnableLeftStickRun = false,
+            ExpWasdMove = true,
             AutoRun = true,
             RunGameDefaultRun = true,
             RunReturnWalk = true,
@@ -344,13 +345,13 @@ public class AppSettings
             VersionLevel = 0,
             FineTuneGains = new[] { 1f, 1f, 1f, 1f, 1f, 1f },
             Packs = BuildDefaultPacks(),
-            ActivePack = "cod20-dyn", // 出厂默认 = COD20 · 动态（免费版内置手感）
+            ActivePack = "dyn", // 与 BuildDefaultPacks 的默认曲线名称一致
         };
     }
 
     /// <summary>12→3 套封装精简：只保留 COD20 × 动态/线性/标准（作品维度暂移除，未来多参数化再加回）。
     /// 每套三根母版曲线 = 各自反死区起点的幂函数曲线（y=anti+x^p×(1-anti)，5 个控制点）。
-    /// 起点沿用调教定稿：左 15% / 腰射 22% / 开镜 24%；灵敏度 左 1.0/1.0、腰射/开镜 1.0/0.9（纵向略缓）。</summary>
+    /// 起点：左 15% / 腰射 24% / 开镜 25%；灵敏度 左 1.0/1.0、腰射/开镜 1.0/0.9（纵向略缓）。</summary>
     private static List<CurvePack> BuildDefaultPacks()
     {
         var packs = new List<CurvePack>();
@@ -360,7 +361,7 @@ public class AppSettings
             Key = "dyn",
             Name = "COD20 · 动态",
             Left = CurveData.Of(1f, 1f, StylePoints(0.15f, 1.00f)),
-            Right = CurveData.Of(1f, 0.9f, StylePointsS(0.22f)),
+            Right = CurveData.Of(1f, 0.9f, StylePointsS(0.24f)),
             RightAds = CurveData.Of(1f, 0.9f, StylePointsS(0.25f)),
         });
         (string key, string name, float exp)[] styles =
@@ -374,7 +375,7 @@ public class AppSettings
                 Key = key,
                 Name = name,
                 Left = CurveData.Of(1f, 1f, StylePoints(0.15f, 1.00f)),
-                Right = CurveData.Of(1f, 0.9f, StylePoints(0.22f, exp)),
+                Right = CurveData.Of(1f, 0.9f, StylePoints(0.24f, exp)),
                 RightAds = CurveData.Of(1f, 0.9f, StylePoints(0.25f, exp)),
             });
         return packs;
@@ -422,17 +423,17 @@ public class AppSettings
         };
     }
 
-    /// <summary>确保 Packs 非空且含 3 套（旧配置/首次启动迁移）；ActivePack 非法时回退 cod20-dyn。</summary>
+    /// <summary>确保 Packs 非空且含 3 套（旧配置/首次启动迁移）；ActivePack 非法时回退 dyn。</summary>
     public static void EnsurePacks(AppSettings s)
     {
         if (s.Packs is not { Count: 3 })
             s.Packs = BuildDefaultPacks();
         if (string.IsNullOrEmpty(s.ActivePack) || !s.Packs.Exists(p => p.Key == s.ActivePack))
-            s.ActivePack = "cod20-dyn"; // 出厂默认 = COD20 · 动态
+            s.ActivePack = "dyn"; // 默认曲线必须存在于当前列表
         foreach (var p in s.Packs)
         {
             if (p.Left.Points.Count < 2) p.Left = CurveData.Of(1f, 1f, LinePoints(0.15f));
-            if (p.Right.Points.Count < 2) p.Right = CurveData.Of(1f, 0.9f, LinePoints(0.22f));
+            if (p.Right.Points.Count < 2) p.Right = CurveData.Of(1f, 0.9f, LinePoints(0.24f));
             if (p.RightAds.Points.Count < 2) p.RightAds = CurveData.Of(1f, 0.9f, LinePoints(0.25f));
         }
         // 动态封装形状迁移：旧版为幂函数（中段≈0.51），新版为 S 形转火曲线（中段≈0.58）。

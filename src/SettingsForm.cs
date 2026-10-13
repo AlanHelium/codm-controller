@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace CODMControllerProbe;
@@ -282,9 +282,7 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
         var wasd=UiLayout.Card(movement,Lang.T("WASD 移动","WASD movement"),Lang.T("左摇杆转换为八方向键盘移动。","Convert the left stick to eight-way keyboard movement."));
         UiLayout.Check(wasd,Lang.T("启用 WASD 移动","Enable WASD movement"),wasdOn,v=>{wasdOn=v;if(v)touchOn=false;SendMovement();});
         UiLayout.Slider(wasd,Lang.T("外圈冲刺阈值","Outer-ring sprint threshold"),wasdThreshold,50,99,v=>v+"%",v=>{wasdThreshold=v;SendMovement();},Lang.T("阈值按摇杆推幅的百分比计算。","Threshold is a percentage of stick magnitude."));
-        UiLayout.Add(wasd,UiLayout.Text(_isDsSource
-            ?Lang.T("当前为 DS 手柄。若外圈无法触发冲刺，可暂用下方 L3 奔跑切换方案。","DS pad detected. If outer-ring sprint fails, try the L3 walk/run scheme below.")
-            :Lang.T("游戏内的键盘奔跑方式需与按住 Shift 的行为一致。","Set the in-game keyboard sprint behavior to match holding Shift.")));
+        UiLayout.Add(wasd,UiLayout.Text(Lang.T("使用 WASD 时，请在游戏中将奔跑模式设为“长按奔跑”。","When using WASD, set in-game sprint to Hold to sprint.")));
         if(movementStatus!=null)
         {
             var live=UiLayout.Text(movementStatus());live.ForeColor=StudioTheme.Accent;UiLayout.Add(wasd,live);
