@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 namespace CODMControllerProbe;
 
 public partial class MainForm
@@ -120,14 +120,16 @@ public partial class MainForm
         if(_studioHome!=null&&!_studioHome.IsDisposed){var visual=ControllerVisuals.Select(_controllerDiscovery.Devices,SonyHidPad.IsOpen?SonyHidPad.DevicePath:XboxHidPad.IsOpen?XboxHidPad.DevicePath:"",_running&&_sourceSlot>=0&&!SonyHidPad.IsOpen&&!XboxHidPad.IsOpen);
             _studioHero?.SetController(visual);_studioDevice!.Text=visual.Title;
             bool working=_running&&!_outputPaused&&_physicalSessionReady&&_ds4!=null&&visual.Connected;
+            string startupError=_componentWaiting&&_componentReadyObserved?"":_conversionError;
             _studioState!.Text=_startingConversion?Lang.T("● 正在准备转换，请稍候","● Preparing conversion…"):
-                _conversionError.Length>0?"● "+_conversionError:
+                startupError.Length>0?"● "+startupError:
+                _componentWaiting&&_componentReadyObserved?Lang.T("● 组件已就绪，可以重试启动","● Components ready; retry conversion"):
                 _vigemBusMissing?Lang.T("● 转换暂不可用 · 请检查设备","● Conversion unavailable · check device"):
                 !visual.Connected?Lang.T("● 等待连接手柄","● Waiting for a controller"):
                 working?Lang.T("● 转换已成功启动","● Conversion started successfully"):
                 _running?Lang.T("● 已连接 · 等待有效输入","● Connected · waiting for valid input"):
                 Lang.T("● 已连接 · 可以开始转换","● Connected · ready to start");
-            _studioState.ForeColor=_conversionError.Length>0?Assets.ErrRed:working?Assets.OkGreen:visual.Connected?StudioTheme.Accent:StudioTheme.Muted;_studioTier!.Text=$"{_freeSensLevel+1} / 20";_studioAds!.Text=$"{Math.Round(_adsMultiplier*100)}%";_studioMove!.Text=_expWasdMove?"WASD":Lang.T("原生摇杆","Analog");string style=_activePackKey.EndsWith("dyn")?Lang.T("动态曲线","Dynamic"):_activePackKey.EndsWith("std")?Lang.T("标准曲线","Standard"):Lang.T("线性曲线","Linear");_studioProfile!.Text=(_nativeInput?Lang.T("手柄原生","Pad native"):Lang.T("键鼠","Keyboard / mouse"))+" · "+style;}
+            _studioState.ForeColor=startupError.Length>0?(_componentWaiting?StudioTheme.Accent:Assets.ErrRed):working?Assets.OkGreen:visual.Connected?StudioTheme.Accent:StudioTheme.Muted;_studioTier!.Text=$"{_freeSensLevel+1} / 20";_studioAds!.Text=$"{Math.Round(_adsMultiplier*100)}%";_studioMove!.Text=_expWasdMove?"WASD":Lang.T("原生摇杆","Analog");string style=_activePackKey.EndsWith("dyn")?Lang.T("动态曲线","Dynamic"):_activePackKey.EndsWith("std")?Lang.T("标准曲线","Standard"):Lang.T("线性曲线","Linear");_studioProfile!.Text=(_nativeInput?Lang.T("手柄原生","Pad native"):Lang.T("键鼠","Keyboard / mouse"))+" · "+style;}
         if(_studioSensitivity!=null&&!_studioSensitivity.IsDisposed){_studioSync=true;try{_studioSensitivity.Value=_freeSensLevel+1;_studioSensitivityNumber!.Value=_freeSensLevel+1;_studioAdsSlider!.Value=(int)Math.Round(_adsMultiplier*100);_studioAdsNumber!.Value=_studioAdsSlider.Value;}finally{_studioSync=false;}foreach(var (b,key) in _studioCurveButtons)Assets.StyleCapsule(b,_activePackKey.EndsWith(key),false);_studioGraph?.Invalidate();}
     }
     private void ReflowHome(){if(_studioShell==null)return;for(int i=0;i<_studioNav.Count;i++)_studioNav[i].Text=StudioSections[i];if(_studioLang!=Lang.En){_studioLang=Lang.En;BeginInvoke(()=>ShowStudioSection(_studioSection));}RefreshStudioState();UiLayout.FitText(_studioContent);}

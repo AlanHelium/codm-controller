@@ -4,7 +4,7 @@ namespace Burrito.Installer;
 
 public static class Product
 {
-    public const string Name="CODM 手柄转换器",Version="3.4.3",Marker="Burrito.CODM.Install.v1";
+    public const string Name="CODM 手柄转换器",Version="3.4.4",Marker="Burrito.CODM.Install.v1";
     public const string RegistryKey=@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CODMControllerProbe";
     public const string RecordName="installation.json",MainName="CODMControllerProbe.exe",UninstallName="CODMControllerProbeUninstaller.exe";
     public static string DefaultRoot=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Programs","Burrito","CODMControllerProbe");
@@ -21,6 +21,8 @@ public sealed class InstallRecord
     public Dictionary<string,bool> DriversPreviouslyPresent {get;set;}=new();
     public bool UninstallPending {get;set;}
     public bool Portable {get;set;}
+    public bool ComponentRestartRequired {get;set;}
+    public long ComponentPreparedBoot {get;set;}
     public bool RemoveDrivers {get;set;}=true;
     public bool DeleteData {get;set;}=true;
     public long PendingBoot {get;set;}
@@ -40,6 +42,7 @@ public sealed class Outcome
 {
     public bool Success {get;set;}
     public bool RestartRequired {get;set;}
+    public bool ReadyToLaunch {get;set;}
     public bool CompleteCleanup {get;set;}
     public string Summary {get;set;}="";
     public List<string> Details {get;set;}=[];

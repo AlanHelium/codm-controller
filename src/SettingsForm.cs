@@ -35,8 +35,6 @@ public sealed class SettingsForm : Form
     private int interactVal = 150;
     private readonly bool _nudgeCursor;
     private readonly Action<bool> _onNudgeChanged = _ => { };
-    private readonly bool _cleanDriversOnExit;
-    private readonly Action<bool> _onCleanChanged = _ => { };
     private readonly Action _onUnlock;
     private readonly bool _swapShoulderTriggers;
     private readonly Action<bool> _onSwapChanged = _ => { };
@@ -113,7 +111,7 @@ public sealed class SettingsForm : Form
         List<PadKeyBind> padKeyMap, Action<List<PadKeyBind>> onKeyMapChanged,
         bool expRsCombo, Action<bool> onExpRsChanged,
         bool fireModeEnabled, int fireModeHoldMs, bool fireModeUseCombo, int fireModeKey, ushort fireModeCombo,
-        Action<bool, int, bool, int, ushort> onFireModeChanged, int initialSection = -1, Action? onReport = null, Func<string>? movementStatus = null, Func<string>? mappingStatus = null)
+        Action<bool, int, bool, int, ushort> onFireModeChanged, int initialSection = -1, Action? onReport = null, Func<string>? movementStatus = null, Func<string>? mappingStatus = null, Action? onCleanup = null)
     {
         _versionLevel = versionLevel;
         _onSensLevel = onSensLevel;
@@ -129,8 +127,6 @@ public sealed class SettingsForm : Form
         interactVal = interactMs;
         _nudgeCursor = nudgeCursor;
         _onNudgeChanged = onNudgeChanged;
-        _cleanDriversOnExit = cleanDriversOnExit;
-        _onCleanChanged = onCleanChanged;
         _onUnlock = onUnlock;
         _swapShoulderTriggers = swapShoulderTriggers;
         _onSwapChanged = onSwapChanged;
@@ -336,8 +332,8 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
         UiLayout.Action(config,Lang.T("使用引导 →","Setup guide →"),onGuide);
         UiLayout.Action(config,Lang.T("更新日志 →","Release notes →"),()=>OpenInline(new ChangelogForm(),Lang.T("更新日志","Release notes")));
         var advanced=UiLayout.Card(tools,Lang.T("维护与重置","Maintenance & reset"));
-        UiLayout.Check(advanced,Lang.T("退出后打开清理工具","Open cleanup tool after exit"),_cleanDriversOnExit,_onCleanChanged,
-            Lang.T("通常保持关闭。启用后退出会打开清理界面，仍需你选择范围并确认。","Usually leave off. After exit, the cleanup interface opens; you still choose and confirm the scope."));
+        if(onCleanup!=null)UiLayout.Action(advanced,Lang.T("打开清理 / 卸载工具…","Open cleanup / uninstall tool…"),onCleanup);
+        UiLayout.Add(advanced,UiLayout.Text(Lang.T("关闭主窗口只退出软件。点击清理工具会退出转换器并打开清理界面，由你选择范围和重启时间。","Closing the main window only exits the app. Opening cleanup exits the converter; you choose the cleanup scope and restart time.")));
         UiLayout.Action(advanced,Lang.T("恢复默认设置…","Restore defaults…"),()=>onReset());
 
         }

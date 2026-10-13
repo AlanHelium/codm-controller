@@ -9,16 +9,24 @@ internal static class StudioTheme
         Text=Color.FromArgb(242,240,235), Muted=Color.FromArgb(160,164,169),
         Accent=Color.FromArgb(239,133,76), Selected=Color.FromArgb(57,42,34);
     public static Font Font(float size=10,FontStyle style=FontStyle.Regular)=>new("Microsoft YaHei UI",size,style);
+    public static GraphicsPath SoftRect(RectangleF r,float radius)
+    {
+        var path=new GraphicsPath();float d=Math.Min(radius*2,Math.Min(r.Width,r.Height));
+        path.AddArc(r.Left,r.Top,d,d,180,90);path.AddArc(r.Right-d,r.Top,d,d,270,90);
+        path.AddArc(r.Right-d,r.Bottom-d,d,d,0,90);path.AddArc(r.Left,r.Bottom-d,d,d,90,90);path.CloseFigure();return path;
+    }
     public static void PaintCard(Graphics g,Rectangle bounds,Color surface,Color background)
     {
+        var saved=g.Save();try {
         g.SmoothingMode=SmoothingMode.AntiAlias;using(var b=new SolidBrush(background))g.FillRectangle(b,bounds);
         var face=new Rectangle(1,1,Math.Max(1,bounds.Width-3),Math.Max(1,bounds.Height-5));
-        using var shadowPath=Assets.RoundPath(new Rectangle(face.X,face.Y+3,face.Width,face.Height),Dpi.Px(12));
+        using var shadowPath=SoftRect(new RectangleF(face.X,face.Y+2,face.Width,face.Height),Dpi.Px(12));
         using(var shadow=new SolidBrush(Color.FromArgb(50,0,0,0)))g.FillPath(shadow,shadowPath);
-        using var path=Assets.RoundPath(face,Dpi.Px(12));
+        using var path=SoftRect(face,Dpi.Px(12));
         using var fill=new LinearGradientBrush(face,Color.FromArgb(Math.Min(255,surface.R+5),Math.Min(255,surface.G+5),Math.Min(255,surface.B+5)),surface,LinearGradientMode.Vertical);
         g.FillPath(fill,path);using var edge=new Pen(Border);g.DrawPath(edge,path);
         using var shine=new Pen(Color.FromArgb(60,100,106,111));g.DrawLine(shine,Dpi.Px(14),2,Math.Max(Dpi.Px(14),bounds.Width-Dpi.Px(14)),2);
+        }finally{g.Restore(saved);}
     }
     public static void Apply(Control root)
     {
@@ -58,7 +66,7 @@ internal static class StudioTheme
 internal class StudioButton : Button
 {
     private bool _hover,_pressed;
-    public StudioButton() {SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.AllPaintingInWmPaint,true);Cursor=Cursors.Hand;AutoSizeMode=AutoSizeMode.GrowAndShrink;}
+    public StudioButton() {SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.AllPaintingInWmPaint|ControlStyles.ResizeRedraw|ControlStyles.Opaque,true);Cursor=Cursors.Hand;AutoSizeMode=AutoSizeMode.GrowAndShrink;}
     public override Size GetPreferredSize(Size proposedSize)
     {
         var text=TextRenderer.MeasureText(Text,Font,Size.Empty,TextFormatFlags.NoPadding|TextFormatFlags.NoPrefix);
@@ -74,12 +82,16 @@ internal class StudioButton : Button
     {Control? ancestor=Parent;while(ancestor!=null&&ancestor.BackColor.A<255)ancestor=ancestor.Parent;using var background=new SolidBrush(ancestor?.BackColor??StudioTheme.Background);e.Graphics.FillRectangle(background,ClientRectangle);}
     protected override void OnPaint(PaintEventArgs e)
     {
+        // Repaint the entire rectangle on every frame, including pixels outside the curved face.
+        // This also covers WM_PRINT and resize/focus paints that omit background erasure.
+        OnPaintBackground(e);
         e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
         bool primary=BackColor==Assets.PrimaryOrange;
         var fill=!Enabled?StudioTheme.Sidebar:_pressed?Color.FromArgb(65,52,43):_hover?(primary?Color.FromArgb(255,153,96):Color.FromArgb(44,47,51)):BackColor;
-        using var path=Assets.RoundPath(new Rectangle(0,0,Width,Height),Dpi.Px(6));
+        if(Width<5||Height<5)return;
+        using var path=StudioTheme.SoftRect(new RectangleF(1.5f,1.5f,Width-3f,Height-3f),Dpi.Px(8));
         using var brush=new SolidBrush(fill);e.Graphics.FillPath(brush,path);
-        using var edge=new Pen(Focused?StudioTheme.Accent:primary?fill:StudioTheme.Border,Focused?2:1);e.Graphics.DrawPath(edge,path);
+        using var edge=new Pen(Focused?Color.FromArgb(126,132,140):primary?fill:StudioTheme.Border,1f){LineJoin=LineJoin.Round};e.Graphics.DrawPath(edge,path);
         TextFormatFlags align=TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix|TextFormatFlags.PreserveGraphicsClipping|TextFormatFlags.PreserveGraphicsTranslateTransform;
         align|=TextAlign is ContentAlignment.MiddleLeft or ContentAlignment.TopLeft?TextFormatFlags.Left:TextFormatFlags.HorizontalCenter;
         var bounds=new Rectangle(Padding.Left+2,1,Math.Max(1,Width-Padding.Horizontal-4),Height-2);

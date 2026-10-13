@@ -114,9 +114,7 @@ public class AppSettings
     /// 前台窗口判定：已"识别当前游戏"则精确匹配该进程；未识别时自动排除系统/本程序窗口。</summary>
     public bool RumbleFocusOnly { get; set; } = true;
 
-    /// <summary>退出时清理驱动（ViGEmBus + HidHide）：默认关闭 —— 关闭软件只是关闭，绝不卸载驱动/请求重启。
-    /// 需要"彻底清除后玩 COD 正作"时：手动开启此选项，或直接用配套的卸载程序。开启后卸载全程静默
-    /// （/norestart），若驱动要求重启只记录提示、绝不自动重启电脑。配置保存在 %AppData%，不受影响。</summary>
+    /// <summary>旧配置兼容字段。运行时忽略，清理工具只能从明确的维护入口打开。</summary>
     public bool CleanDriversOnExit { get; set; } = false;
 
     // ================= 实验性功能（默认全关 · 不写宣传 · 可能不稳定） =================

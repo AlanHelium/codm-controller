@@ -1,4 +1,4 @@
-﻿using Burrito.Installer;
+using Burrito.Installer;
 using System.Text.Json;
 
 static class Checks
@@ -22,6 +22,7 @@ static class Checks
             File.Delete(Path.Combine(target,"user-added.txt"));retained=SafeFiles.RemoveInstalledFiles(target,false);Check(retained.Count==0&&!Directory.Exists(target),"Owned files and empty install directory fully removed");
             Directory.CreateDirectory(target);Files(target);retained=SafeFiles.RemoveInstalledFiles(target,true);Check(!File.Exists(Path.Combine(target,Product.MainName))&&File.Exists(Path.Combine(target,Product.UninstallName)),"Pending reboot removes main but preserves recovery");Check(File.Exists(SafeFiles.Child(target,"components/HidHide_1.5.230_x64.exe")),"Official recovery package retained while pending");
             var record=InstallRecord.Load(Path.Combine(target,Product.RecordName));record.UninstallPending=true;record.PendingBoot=ExitPolicy.Boot;record.RemoveDrivers=false;record.DeleteData=false;record.Save();var loaded=InstallRecord.Load(Path.Combine(target,Product.RecordName));Check(loaded.UninstallPending&&!loaded.RemoveDrivers&&!loaded.DeleteData,"Deferred cleanup preserves user's choices");
+            record.ComponentRestartRequired=true;record.ComponentPreparedBoot=CODMControllerProbe.ComponentProbe.BootStamp;record.Save();loaded=InstallRecord.Load(Path.Combine(target,Product.RecordName));Check(loaded.ComponentRestartRequired&&loaded.ComponentPreparedBoot==record.ComponentPreparedBoot,"Component restart request survives record round-trip");Check(CODMControllerProbe.ComponentProbe.PendingFromRecord(target+Path.DirectorySeparatorChar),"Main app and installer agree on pending restart");
             Reject(()=>SafeFiles.Child(target,"components/../../outside"),"Nested traversal refused");
             Check(ExitPolicy.Success(0)&&ExitPolicy.Success(3010)&&!ExitPolicy.Success(1603),"Official result classification");Check(ExitPolicy.Reboot(3010)&&ExitPolicy.Reboot(1641)&&!ExitPolicy.Reboot(0),"Restart requested only by actual codes");
             Check(Drivers.IsTargetInf("; Nefarius\nAddService = HidHide, 0, Service","HidHide"),"Exact vendor/service INF identified");Check(!Drivers.IsTargetInf("; Another vendor\nAddService = HidHide,0,Service","HidHide"),"Same service with another provider rejected");Check(!Drivers.IsTargetInf("; Nefarius\nAddService=NotHidHide,0,Service","HidHide"),"Similar service name rejected");

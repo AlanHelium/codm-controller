@@ -20,8 +20,11 @@ public partial class MainForm
             try
             {
                 if(_closingInputSession)return false;
-                if(GameRunningNow())throw new IOException(Lang.T("请先退出游戏，再启动转换并重新打开游戏","Close the game first, start conversion, then reopen the game"));
-                if(!HidHideManager.IsInstalled())throw new IOException(Lang.T("连接组件未就绪，请在设备检测中检查","Connection component unavailable; check device diagnostics"));
+                var games=BlockingGameProcesses();
+                if(games.Count>0)throw new IOException(Lang.T("请先退出游戏及模拟器，再启动转换：","Close the game and emulator before conversion: ")+string.Join(", ",games.Select(p=>$"{p.Name} (PID {p.Id})")));
+                var components=ComponentProbe.Capture(AppContext.BaseDirectory);
+                _componentReadyObserved=components.Ready;_componentWaiting=!components.Ready;
+                if(!components.Ready)throw new IOException(components.Message);
                 if(!_isolationApplied&&!HidHideManager.RecoverPreviousSession(out _,out string recoveryError))throw new IOException(recoveryError);
                 var devices=discovered??DeviceCatalog.Enumerate().ToArray();
                 _physicalXInputCandidate=ControllerVisuals.HasPhysicalXInputCandidate(devices);

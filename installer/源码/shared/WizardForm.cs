@@ -1,4 +1,4 @@
-﻿using System.Drawing.Drawing2D;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
 namespace Burrito.Installer;
@@ -83,7 +83,7 @@ public sealed class WizardForm:Form
         if(_install)
         {
             var place=Appearance.Card(_body,"安装位置");var row=new TableLayoutPanel{Dock=DockStyle.Top,AutoSize=true,ColumnCount=2,Margin=new Padding(0,3,0,2)};row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,124));_path.Margin=new(0,8,10,6);row.Controls.Add(_path,0,0);row.Controls.Add(_browse,1,0);Appearance.Add(place,row);Appearance.Add(place,Appearance.Label("请使用独立子文件夹；配置不会在安装时重置。",9));
-            var items=Appearance.Card(_body,_componentOnly?"免安装包已包含":"本次安装包含");Appearance.Add(items,Appearance.Label("主程序 v3.4.2、卸载程序、必看 README.TXT、赞赏码原图。",9.5f));Appearance.Add(items,Appearance.Label("ViGEmBus：虚拟手柄输出　·　HidHide：避免实体输入与改键重复",9.5f));Appearance.Add(items,Appearance.Label(_componentOnly?"这里只准备或复用共享驱动，不移动文件、不登记应用卸载入口。":"已有就绪组件会复用。两项驱动为共享组件，卸载可能影响其他手柄软件。",9));
+            var items=Appearance.Card(_body,_componentOnly?"免安装包已包含":"本次安装包含");Appearance.Add(items,Appearance.Label("主程序 v"+Product.Version+"、卸载程序、必看 README.TXT、赞赏码原图。",9.5f));Appearance.Add(items,Appearance.Label("ViGEmBus：虚拟手柄输出　·　HidHide：避免实体输入与改键重复",9.5f));Appearance.Add(items,Appearance.Label(_componentOnly?"这里只准备或复用共享驱动，不移动文件、不登记应用卸载入口。":"已有就绪组件会复用。两项驱动为共享组件，卸载可能影响其他手柄软件。",9));
             var safety=Appearance.Card(_body,"安全软件提示");var warning=Appearance.Label("本安装包与主程序尚未代码签名，可能出现未知发行者或风险提示。请核验来源、发布的 SHA256 和扫描结果；不要把所有提示都当作误报，也不要关闭系统防护。",9);warning.ForeColor=Color.FromArgb(229,191,134);Appearance.Add(safety,warning);Appearance.Add(_body,_agree);
         }
         else
@@ -113,7 +113,7 @@ public sealed class WizardForm:Form
         if(_outcome!=null)
         {
             if(_outcome.RestartRequired){if(MessageBox.Show(this,"请先保存其他工作。确认后请求 Windows 在30秒后正常重启，不强制结束应用。","立即重启？",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)==DialogResult.Yes&&!_restart())MessageBox.Show(this,"未能请求重启，请稍后手动重启。","重启提示");return;}
-            if(_install&&_outcome.Success){try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(_path.Text,Product.MainName)){UseShellExecute=true});}catch(Exception ex){MessageBox.Show(this,ex.Message);}return;}
+            if(_install&&_outcome.Success&&_outcome.ReadyToLaunch){try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(_path.Text,Product.MainName)){UseShellExecute=true});Close();}catch(Exception ex){MessageBox.Show(this,ex.Message);}return;}
         }
         if(!_install&&MessageBox.Show(this,"将按勾选项移除程序、共享驱动和个人配置。请确认已备份需要保留的内容。","确认卸载",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
         _busy=true;_log.Visible=true;foreach(Control control in new Control[]{_primary,_close,_agree,_path,_browse,_drivers,_data,_read})control.Enabled=false;
@@ -123,11 +123,12 @@ public sealed class WizardForm:Form
     }
     public void ShowResult(Outcome result)
     {
-        _outcome=result;_log.Visible=true;_status.Text=result.Summary;_status.ForeColor=result.Success?Color.FromArgb(103,207,158):Color.FromArgb(244,173,111);
+        _outcome=result;_log.Visible=true;_status.Text=result.Summary;_status.ForeColor=result.Success&&(!_install||result.ReadyToLaunch)&&!result.RestartRequired?Color.FromArgb(103,207,158):Color.FromArgb(244,173,111);
         foreach(string line in result.Details.Concat(result.Retained))_log.AppendText(Environment.NewLine+line);
         if(result.RestartRequired){_primary.Text="立即重启";_close.Text="稍后重启";_primary.Visible=true;}
-        else {_primary.Text=_install&&result.Success?"启动软件":"重试";_primary.Visible=_install||!result.Success;_close.Text="完成";}
+        else {_primary.Text=_install&&result.Success?(result.ReadyToLaunch?"启动软件":"重新检查"):"重试";_primary.Visible=_install||!result.Success;_close.Text="完成";}
         CleanupCachesOnClose=!_install&&result.Success&&!result.RestartRequired;_logs.Text="保存记录";Reflow();_viewport.ScrollControlIntoView(_status);
+        if(!_busy){_primary.Enabled=result.Success||result.RestartRequired||!_install||_agree.Checked;_close.Enabled=true;}
     }
     private void ShowReadme()
     {

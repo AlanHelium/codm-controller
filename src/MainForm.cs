@@ -191,7 +191,6 @@ public partial class MainForm : Form
     // ---- 手感/震动/驱动生命周期开关（设置持久化）----
     private bool _nudgeCursor = true;              // 推左摇杆>90% 光标移左上角（重生避让）
     private bool _rumbleFocusOnly = true;          // 枪声震动仅游戏前台触发（后台不检测）
-    private bool _cleanDriversOnExit = false;      // 退出时清理驱动：默认关（关闭软件=只关闭，绝不卸载/重启）；需彻底清除时在设置里开启或用卸载程序
     private int _gameProcId;                       // "识别当前游戏"锁定的前台进程 PID（0=未锁定）
 
     // ---- 高频输出注入（v2.2.18）：独立后台线程按用户设定频率读手柄→写虚拟 DS4；UI 线程只做显示刷新 ----
@@ -296,7 +295,6 @@ public partial class MainForm : Form
             _closingInputSession=true;
             SaveSettings();
             StopConversion();
-            if (_cleanDriversOnExit) UninstallDrivers(); // 退出清理驱动：正作/反作弊检测不到映射痕迹；配置保留
         };
     }
 
@@ -347,7 +345,6 @@ public partial class MainForm : Form
             _shotSens = s.ShotSensitivity is >= 1.5f and <= 8f ? s.ShotSensitivity : 3f;
             _nudgeCursor = s.NudgeCursor;
             _rumbleFocusOnly = s.RumbleFocusOnly;
-            _cleanDriversOnExit = s.CleanDriversOnExit;
             // ---- Gyro 实验项（默认关；读入后恒生效，不影响其它功能）----
             _gyroEnabled = s.GyroEnabled;
             _gyroSens = s.GyroSens is >= 0.2f and <= 3f ? s.GyroSens : 1f;
@@ -447,7 +444,6 @@ public partial class MainForm : Form
         _shotSens = d.ShotSensitivity;
         _nudgeCursor = d.NudgeCursor;
         _rumbleFocusOnly = d.RumbleFocusOnly;
-        _cleanDriversOnExit = d.CleanDriversOnExit;
             _shotRumble.Sensitivity = _shotSens;
             _shotRumble.LowBoost = _rumbleLowBoost;
             _shotRumble.Gate = () => !_rumbleFocusOnly || IsGameForeground();
@@ -545,10 +541,9 @@ public partial class MainForm : Form
             string vib = _rumbleOn ? Lang.T("开", "On") : Lang.T("关", "Off");
             string move = _expWasdMove ? Lang.T("WASD（推荐）", "WASD (rec.)")
                 : (_enableRun ? Lang.T("L3 切换奔跑", "L3 run") : Lang.T("原始", "Native"));
-            string clean = _cleanDriversOnExit ? Lang.T("开", "On") : Lang.T("关", "Off");
             _lblKeyInfo.Text = Lang.T("关键设置", "Key settings") + $" · ADS {_adsMultiplier:P0} · "
                 + Lang.T("输出", "Output") + $" {_outputHz}Hz · " + Lang.T("震动", "Rumble") + $"：{vib} · "
-                + Lang.T("移动", "Move") + $"：{move} · " + Lang.T("退出清理驱动", "Clean drivers on exit") + $"：{clean}";
+                + Lang.T("移动", "Move") + $"：{move}";
         }
     }
 
@@ -646,7 +641,7 @@ public partial class MainForm : Form
             ShotSensitivity = _shotSens,
             NudgeCursor = _nudgeCursor,
             RumbleFocusOnly = _rumbleFocusOnly,
-            CleanDriversOnExit = _cleanDriversOnExit,
+            CleanDriversOnExit = false,
             GyroEnabled = _gyroEnabled,
             GyroSens = _gyroSens,
             ExpWasdMove = _expWasdMove,
@@ -1389,6 +1384,7 @@ public partial class MainForm : Form
     /// <summary>安全创建 ViGEm 客户端；驱动缺失时置空并记录（不崩溃，由 AutoInstallDrivers 引导安装）。</summary>
     private void TryInitVigem()
     {
+        if (_vigem != null) return;
         try
         {
             _vigem = new ViGEmClient();
@@ -1542,13 +1538,16 @@ public partial class MainForm : Form
     /// 只有安装全部完成时才提示"已就绪"，绝不让用户决定"要不要装"。
     /// 注意：本方法在后台线程执行（Task.Run）；所有 UI 操作必须 Invoke 回主线程。
     /// </summary>
-    private void AutoInstallDrivers()
+    private async Task AutoInstallDrivers()
     {
-        if (!_vigemBusMissing && IsHidHideInstalled()) { Ui(() => StartConversion()); return; }
-        Ui(() => {
-            SetStatus(Lang.T("组件尚未就绪，请先准备组件", "Components are not ready; prepare them first"), Color.FromArgb(245,158,11));
-            MessageBox.Show(this, Lang.T("请先退出转换器和游戏。免安装版运行同目录的「准备组件.cmd」；安装版重新运行安装包进行组件准备或修复。\n过程会列清组件内容，并由你决定何时重启。", "Close the converter and game first. For the portable edition, run the Prepare components command in its folder; for the installed edition, rerun Setup. The tool explains components and lets you choose when to restart."), Lang.T("准备组件", "Prepare components"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-        });
+        try
+        {
+            Ui(()=>SetStatus(Lang.T("正在检查组件启动状态…","Checking component startup…"),Color.FromArgb(245,158,11)));
+            var readiness=await ComponentProbe.WaitAsync(AppContext.BaseDirectory);
+            if(_closingInputSession)return;
+            Ui(()=>{_componentReadyObserved=readiness.Ready;_componentWaiting=!readiness.Ready;if(readiness.Ready)StartConversion();else{_conversionError=readiness.Message;SetStatus(_conversionError,Color.FromArgb(245,158,11));RefreshStudioState();}});
+        }
+        catch(Exception ex){Ui(()=>{_conversionError=Lang.T("组件检查未完成：","Component check failed: ")+ex.Message;SetStatus(_conversionError,Assets.ErrRed);RefreshStudioState();});}
     }
     /// <summary>后台线程 → 主线程：安全更新 UI（窗口已销毁则静默忽略）。</summary>
     private void Ui(Action act)
@@ -2273,7 +2272,7 @@ public partial class MainForm : Form
     private async void StartConversion()
     {
         if (_running||_startingConversion||UiPreview.Enabled) return;
-        _startingConversion=true;_conversionError="";btnToggle.Enabled=false;RefreshStudioState();
+        _startingConversion=true;_conversionError="";_componentWaiting=false;btnToggle.Enabled=false;RefreshStudioState();
         bool prepared=await Task.Run(()=>PreparePhysicalInputSession());
         _startingConversion=false;
         if(IsDisposed||Disposing||_closingInputSession){RestorePhysicalInputSession();return;}
@@ -2284,15 +2283,16 @@ public partial class MainForm : Form
         {
             _outputPaused = true;
 
+            if (_vigem == null) TryInitVigem(); // Retry after Windows finishes initializing the driver.
+
             if (_ds4 == null)
             {
                 if (_vigem == null)
                 {
                     StopConversion();
                     MessageBox.Show(this,
-                        Lang.T("虚拟手柄驱动（ViGEm Bus）未安装，无法启动转换。\n请运行本目录下的 ViGEmBus_Setup.exe 安装驱动后重试。",
-                               "ViGEm Bus driver is missing. Run ViGEmBus_Setup.exe in this folder and retry."),
-                        Lang.T("驱动未安装", "Driver Missing"),
+                        Lang.T("ViGEmBus 接口暂不可用，请在设备检测中刷新组件状态。\n", "ViGEmBus interface is unavailable; refresh device diagnostics.\n") + _vigemError,
+                        Lang.T("组件尚未就绪", "Component not ready"),
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
@@ -2329,7 +2329,7 @@ public partial class MainForm : Form
         {
             StopConversion();
             MessageBox.Show(this,
-                Lang.T("启动失败，请确认已安装 ViGEmBus 驱动。\n\n", "Start failed. Make sure ViGEmBus driver is installed.\n\n") + ex.Message,
+                Lang.T("转换启动失败，请打开设备检测查看实际组件状态。\n\n", "Conversion failed to start; check actual component status in diagnostics.\n\n") + ex.Message,
                 Lang.T("CODM 手柄转换", "CODM Controller Bridge"), MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -2405,7 +2405,7 @@ public partial class MainForm : Form
 
         Line("===== CODM 手柄转换器 诊断报告 =====");
         Line("生成时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-        Line("软件版本：v3.4.2   |   运行：" + (_running ? "转换中" : "已停止"));
+        Line("软件版本：v" + typeof(MainForm).Assembly.GetName().Version?.ToString(3) + "   |   运行：" + (_running ? "转换中" : "已停止"));
         if (_running && _startedTick != 0)
         {
             var d = TimeSpan.FromMilliseconds(Environment.TickCount64 - _startedTick);
@@ -2415,7 +2415,9 @@ public partial class MainForm : Form
 
         // ---- 1. 输入源与设备连接 ----
         Line("【1. 输入源与设备连接】");
-        Line("  当前输入源：" + (_sourceName.Length > 0 ? _sourceName : "未连接"));
+        var physical=ControllerVisuals.Select(DeviceCatalog.Enumerate());
+        Line("  实体设备识别："+(physical.Connected?physical.Title:"等待连接手柄"));
+        Line("  当前输入读取：" + (_sourceName.Length > 0 ? _sourceName : "尚未开始读取"));
         if (SonyHidPad.IsOpen)
         {
             Line($"  Sony HID：已打开（{SonyHidPad.KindName()}）");
@@ -2427,7 +2429,7 @@ public partial class MainForm : Form
             if (probe.Length > 0)
                 Line("  最近探测：" + probe.Replace("\n", " | "));
         }
-        else Line("  Sony HID：未打开（未检测到 DS 系手柄）");
+        else Line("  Sony HID：读取通道尚未打开");
         Line($"  Xbox HID：{(XboxHidPad.IsOpen ? "已打开（" + XboxHidPad.KindName() + "）" : "未打开")}");
         Line($"  XInput 槽位：{(_sourceSlot >= 0 ? _sourceSlot.ToString() : "未使用")}");
         Line("");
@@ -2535,22 +2537,7 @@ public partial class MainForm : Form
     /// <summary>当前是否有游戏进程在运行（不要求前台：玩家可能切出工具查看状态）。</summary>
     private static bool GameRunningNow()
     {
-        try
-        {
-            foreach (var p in System.Diagnostics.Process.GetProcesses())
-            {
-                if (p.Id == Environment.ProcessId) { p.Dispose(); continue; }
-                string n = p.ProcessName;
-                p.Dispose();
-                if (n.Contains("ControllerProbe", StringComparison.OrdinalIgnoreCase) || n.Contains("手柄转换")) continue;
-                foreach (var k in _gameProcKeywords)
-                {
-                    if (n.Contains(k, StringComparison.OrdinalIgnoreCase)) return true;
-                }
-            }
-        }
-        catch { /* 进程枚举失败按无游戏处理 */ }
-        return false;
+        return BlockingGameProcesses().Count>0;
     }
 
     // ================= 轮询：找手柄并转发 =================
@@ -3440,7 +3427,7 @@ public partial class MainForm : Form
                 }
                 SaveSettingsNow();
             }, // 左摇杆奔跑（L3 切换 + 可选自动奔跑）
-            _cleanDriversOnExit, v => { _cleanDriversOnExit = v; SaveSettingsNow(); }, // 退出时清理驱动（默认关）
+            false, _ => { }, // Retained constructor parameters for old callers; exit cleanup is retired.
             _gyroEnabled, _gyroSens, _gyroDeadzone, _gyroSmooth, _gyroInvertX, _gyroInvertY,
             (en, sens, dz, sm, invX, invY) =>
             {
@@ -3492,7 +3479,7 @@ public partial class MainForm : Form
                 _fireModeCombo = mask;
                 _fireModeWasDown = _fireModeSent = false;
                 SaveSettingsNow();
-            }, initialSection:section,onReport:()=>MountStudioForm(new DiagnosticForm(BuildDiagnosticReport)),movementStatus:WasdLiveStatus,mappingStatus:()=>_gameKeys.MappingStatus());
+            }, initialSection:section,onReport:()=>MountStudioForm(new DiagnosticForm(BuildDiagnosticReport)),movementStatus:WasdLiveStatus,mappingStatus:()=>_gameKeys.MappingStatus(),onCleanup:()=>{Close();UninstallDrivers();});
         form.PrepareForStudio(section, (child,title) => MountStudioForm(child,title));
         MountStudioForm(form,StudioSections[Math.Clamp(section+1,1,7)],root:true);
         RefreshSensArea(); // 设置窗口里改的档位/趴下 → 主界面总结行同步
@@ -3564,18 +3551,7 @@ public partial class MainForm : Form
     /// <summary>一键诊断：驱动/隐藏/手柄/音频 四个状态灯 + 修复提示，砍掉 80% 售后问题。</summary>
     private void OpenDiag()
     {
-        bool hidHideOk;
-        try { hidHideOk = HidHideManager.IsInstalled() && HidHideManager.GetActive(); }
-        catch { hidHideOk = false; }
-        var form = new DiagForm(
-            vigemOk: _ds4 != null,
-            hidHideOk: hidHideOk,
-            padOk: _sourceSlot >= 0,
-            audioOk: !_running || _shotRumble.Running, // 未运行转换不算故障（启动后才会采集）
-            _versionLevel,
-            hidHideText: lblHidHide.Text,
-            padText: lblStatus.Text,
-            openGuide: () => { MountStudioForm(new GuideForm()); });
+        var form = new DiagForm(CaptureStartupDiagnosticsAsync,StartConversion,()=>MountStudioForm(new GuideForm()));
         MountStudioForm(form);
     }
 
@@ -3723,10 +3699,8 @@ public partial class MainForm : Form
     }
 
     /// <summary>
-    /// 退出时清理驱动（防 COD 正作检测，反作弊安全方案）：
-    /// 断开虚拟手柄 → 恢复实体手柄可见 → 静默卸载 ViGEmBus 与 HidHide。
-    /// 配置文件在 %AppData%，与驱动无关 → 客户灵敏度/手感设置不受影响、来回装删保留。
-    /// 绝不"屏蔽/隐藏"以欺骗反作弊——卸载驱动让系统恢复干净，才是合规且无封号风险的路径。
+    /// 仅由维护页面的明确点击打开配套清理界面。正常关窗不会调用。
+    /// 清理范围、配置是否保留与重启时间由用户在清理工具中选择。
     /// </summary>
     private void UninstallDrivers()
     {

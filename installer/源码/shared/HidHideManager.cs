@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
@@ -347,7 +347,7 @@ public static class HidHideManager
     public static bool GetActive()
         => TryGetActive(out bool active) && active;
 
-    private static bool TryGetActive(out bool active)
+    public static bool TryGetActive(out bool active)
     {
         active = false;
         var h = Open();

@@ -38,3 +38,11 @@ v3.4.3 修复记录：曲线编辑页参数加载结束后解除回调屏蔽。�
 ```powershell
 dotnet run --project src/_uitest/FeelSliders.csproj -c Release -- artifacts/slider-check
 ```
+
+v3.4.4 首次启动、实时诊断、关闭行为与圆角重绘检查（55 项）：
+
+```powershell
+dotnet run --project src/_uitest/FirstRunChecks.csproj -c Release -- artifacts/first-run-check
+```
+
+该检查需要本机已经安装且生效的 ViGEmBus 和 HidHide；不会替你安装组件。它会创建短暂的测试进程、一个中立虚拟手柄并读取组件接口，检查完恢复退出，不改写个人配置或隐藏列表。维护后端 44 项和滑块 54 项回归检查通过。本机复用现有驱动升级 v3.4.4 后接口就绪，无需重启；真实 DS5 USB 输入、隔离、映射交换及恢复检查通过。该结果不等同于在全新 Windows 上首次安装驱动的测试。Windows 若明确要求重启，界面会保留真实的待重启状态，允许选择稍后重启，不自动重启。
