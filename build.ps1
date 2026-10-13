@@ -15,8 +15,9 @@ try {
     @($taskManifest | Select-Object Name,Hash) | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $taskPortableRoot 'portable-files.json') -Encoding UTF8
     @('@echo off','start "" "%~dp0CODMControllerProbeUninstaller.exe" --portable --prepare') | Set-Content -LiteralPath (Join-Path $taskPortableRoot '准备组件.cmd') -Encoding ASCII
     @('@echo off','start "" "%~dp0CODMControllerProbeUninstaller.exe" --portable') | Set-Content -LiteralPath (Join-Path $taskPortableRoot '清理卸载.cmd') -Encoding ASCII
-    Copy-Item -LiteralPath 'installer/待发布/CODM手柄转换器-Setup-v3.4.2.exe' -Destination (Join-Path $taskReleaseRoot 'CODM手柄转换器-v3.4.2-安装版.exe') -Force
-    Copy-Item -LiteralPath '必看 README.TXT','赞赏码.png' -Destination $taskReleaseRoot -Force
-    Compress-Archive -LiteralPath $taskPortableRoot -DestinationPath (Join-Path $taskReleaseRoot 'CODM手柄转换器-v3.4.2-免安装版.zip') -CompressionLevel Optimal -Force
+    Copy-Item -LiteralPath 'installer/待发布/CODM手柄转换器-Setup-v3.4.2.exe' -Destination (Join-Path $taskReleaseRoot 'CODMController-v3.4.2-Setup.exe') -Force
+    Copy-Item -LiteralPath '必看 README.TXT' -Destination (Join-Path $taskReleaseRoot 'README-Important.txt') -Force
+    Copy-Item -LiteralPath '赞赏码.png' -Destination (Join-Path $taskReleaseRoot 'Donation.png') -Force
+    Compress-Archive -LiteralPath $taskPortableRoot -DestinationPath (Join-Path $taskReleaseRoot 'CODMController-v3.4.2-Portable.zip') -CompressionLevel Optimal -Force
     Get-ChildItem -LiteralPath $taskReleaseRoot -File | Where-Object Name -ne 'SHA256.txt' | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName).Hash + '  ' + $_.Name } | Set-Content -LiteralPath (Join-Path $taskReleaseRoot 'SHA256.txt') -Encoding UTF8
 } finally { Pop-Location }
