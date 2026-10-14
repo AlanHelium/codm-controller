@@ -1,4 +1,4 @@
-﻿namespace CODMControllerProbe;
+namespace CODMControllerProbe;
 
 /// <summary>
 /// 键位修正弹窗：部分第三方手柄会把 A/B/X/Y 在 XInput 层报错位。
@@ -8,6 +8,14 @@
 /// </summary>
 public class RemapForm : Form
 {
+    private readonly Action<int,int>? _assignAction;
+    private readonly Action? _restoreActions;
+    private readonly Func<XInputNative.XInputGamepad?>? _readPhysical;
+    private readonly Action<bool>? _captureChanged;
+    private readonly Func<int,string>? _sourceStatus;
+    private readonly Func<bool>? _readSwap;
+    private readonly Func<bool>? _readInteract;
+    private bool _syncBindings;
     public KeyMap Map;
 
     private readonly List<(string action, Label keyLbl, Button btn)> _rows = new();
@@ -43,8 +51,9 @@ public class RemapForm : Form
                      int interactKey = 0x4000, Action<int>? onInteractKeyChange = null,
                      bool swapEnabled = false, Action<bool>? onSwapChange = null,
                      int meleeKey = 0x0080, Action<int>? onMeleeKeyChange = null,
-                     bool autoCaptureMelee = false)
+                     bool autoCaptureMelee = false, Action<int,int>? assignAction=null,Action? restoreActions=null,Func<XInputNative.XInputGamepad?>? readPhysical=null,Action<bool>? captureChanged=null,Func<int,string>? sourceStatus=null,Func<bool>? readSwap=null,Func<bool>? readInteract=null)
     {
+        _assignAction=assignAction;_restoreActions=restoreActions;_readPhysical=readPhysical;_captureChanged=captureChanged;_sourceStatus=sourceStatus;_readSwap=readSwap;_readInteract=readInteract;
         Map = map;
         _onChange = onChange;
         _onComboChange = onComboChange ?? (_ => { });
@@ -157,7 +166,7 @@ public class RemapForm : Form
             ForeColor = Color.FromArgb(55, 65, 81),
             Font = Assets.Ui(9.5F),
         };
-        _interactChk.CheckedChanged += (_, _) => _onInteractEnableChange(_interactChk.Checked);
+        _interactChk.CheckedChanged += (_, _) => {if(!_syncBindings)_onInteractEnableChange(_interactChk.Checked);};
         var interactBtn = new StudioButton { Text = Lang.T("重设", "Set"), Size = new Size(Dpi.Px(70), Dpi.Px(28)), Tag = 9, FlatStyle = FlatStyle.Flat };
         Assets.StyleOutline(interactBtn, 6);
         tbl.Controls.Add(interactName, 0, 10);
@@ -177,7 +186,7 @@ public class RemapForm : Form
             ForeColor = Color.FromArgb(55, 65, 81),
             Font = Assets.Ui(9.5F),
         };
-        _swapChk.CheckedChanged += (_, _) => _onSwapChange(_swapChk.Checked);
+        _swapChk.CheckedChanged += (_, _) => {if(!_syncBindings){_onSwapChange(_swapChk.Checked);RefreshRows();}};
         tbl.Controls.Add(swapName, 0, 11);
         tbl.Controls.Add(_swapChk, 1, 11);
 
@@ -209,6 +218,7 @@ public class RemapForm : Form
         };
         btnDefault.Click += (_, _) =>
         {
+            if(_restoreActions!=null){_restoreActions();return;}
             Map.Jump = 0x1000; Map.Crouch = 0x2000; Map.Reload = 0x4000; Map.Switch = 0x8000;
             Map.Aim = KeyMap.LT; Map.Shoot = KeyMap.RT;
             Map.Tactical = 0x0100; Map.Lethal = 0x0200;
@@ -252,6 +262,7 @@ public class RemapForm : Form
 
     private void StartCapture(int idx)
     {
+        _captureChanged?.Invoke(true);
         _captureIdx = idx;
         _awaitRelease = false;
         _hadPress = false;
@@ -283,6 +294,7 @@ public class RemapForm : Form
     private void PollCapture()
     {
         if (_captureIdx < 0) return;
+        if(_readPhysical!=null){var raw=_readPhysical();if(raw.HasValue)HandleCapture(raw.Value.wButtons,raw.Value.bLeftTrigger,raw.Value.bRightTrigger);return;}
 
         // XInput 优先；无 XInput 设备时走 Sony HID 通道（DS4/DualSense/DSE）或 Xbox HID 直读（One/Series）
         int slot = -1;
@@ -332,11 +344,12 @@ public class RemapForm : Form
             if (_hadPress)
             {
                 int count = PopCount(_pressedMask) + (_pressedLt > 10 ? 1 : 0) + (_pressedRt > 10 ? 1 : 0);
-                if (count >= 2)
+                if (count >= 2 && _pressedLt<=10 && _pressedRt<=10)
                 {
                     _combo = _pressedMask;
                     _captureIdx = -1;
                     _timer.Stop();
+                    _captureChanged?.Invoke(false);
                     RefreshRows();
                     _hint.Text = Lang.T("组合键已更新：", "Combo updated: ") + ComboName(_combo);
                     _onComboChange(_combo);
@@ -360,15 +373,15 @@ public class RemapForm : Form
             return;
         }
         // 扳机优先：LT/RT 不占按钮位，单独判定；随后取按钮位（含 DPad 四向，单键动作同样适用）
-        if (lt > 10) { ApplyCapture(KeyMap.LT); return; }
-        if (rt > 10) { ApplyCapture(KeyMap.RT); return; }
-        ushort pressed = buttons; // 保留全部按钮位：A/B/X/Y/LB/RB/L3/R3/方向键/View/Option 均可作为触发键
-        if (pressed == 0) return;
+        int pressed=MappingPolicy.SinglePressed(new(){wButtons=buttons,bLeftTrigger=lt,bRightTrigger=rt});
+        if (pressed == 0){if(buttons!=0||lt>10||rt>10)_hint.Text=Lang.T("请一次只按一个实体手柄键；松开其他按键后再试。","Press only one physical pad button; release the other buttons and retry.");return;}
         ApplyCapture(pressed);
     }
 
     private void ApplyCapture(int pressed)
     {
+        if(_assignAction!=null&&(_captureIdx is >=0 and <=7 || _captureIdx==12))_assignAction(_captureIdx==12?8:_captureIdx,pressed);
+        else
         switch (_captureIdx)
         {
             // 防撞（逻辑冲突修复）：新绑定值若已被其它动作占用，两动作自动交换绑定——
@@ -395,6 +408,7 @@ public class RemapForm : Form
 
         _captureIdx = -1;
         _timer.Stop();
+        _captureChanged?.Invoke(false);
         RefreshRows();
         _hint.Text = Lang.T("已更新。再点「重设」可以继续调整其它动作。", "Updated. Tap Set again to adjust another action.");
         _onChange(); // 立即保存键位修正到配置文件
@@ -442,10 +456,10 @@ public class RemapForm : Form
         _meleeKey=Map.MeleePing;
         var bits = new[] { Map.Jump, Map.Crouch, Map.Reload, Map.Switch, Map.Aim, Map.Shoot, Map.Tactical, Map.Lethal };
         for (int i = 0; i < 8; i++)
-            _rows[i].keyLbl.Text = Lang.T("绑定：", "Bound: ") + KeyMap.BitName(bits[i]);
+            _rows[i].keyLbl.Text = Lang.T("实体键：", "Physical: ") + KeyMap.BitName(bits[i]) + (string.IsNullOrEmpty(_sourceStatus?.Invoke(bits[i]))?"":" · "+_sourceStatus!(bits[i]));
         _comboKeyLbl.Text = Lang.T("组合：", "Combo: ") + ComboName(_combo);
         _interactChk.Text = Lang.T("长按 " + KeyMap.BitName(_interactKey) + " 触发 F（交互键）", "Hold " + KeyMap.BitName(_interactKey) + " to press F (interact)");
-        _meleeKeyLbl.Text = Lang.T("绑定：", "Bound: ") + KeyMap.BitName(_meleeKey);
+        _meleeKeyLbl.Text = Lang.T("实体键：", "Physical: ") + KeyMap.BitName(_meleeKey)+(string.IsNullOrEmpty(_sourceStatus?.Invoke(_meleeKey))?"":" · "+_sourceStatus!(_meleeKey));
     }
 
     private static int PopCount(ushort v)
@@ -474,7 +488,8 @@ public class RemapForm : Form
     }
     protected override void Dispose(bool disposing)
     {
-        if(disposing){_timer?.Stop();_timer?.Dispose();}
+        if(disposing){_captureChanged?.Invoke(false);_timer?.Stop();_timer?.Dispose();}
         base.Dispose(disposing);
     }
+    public void RefreshBindings(){RefreshRows();_syncBindings=true;try{if(_readSwap!=null)_swapChk.Checked=_readSwap();if(_readInteract!=null)_interactChk.Checked=_readInteract();}finally{_syncBindings=false;}_hint.Text=Lang.T("显示当前实体键及接管用途。重新绑定时会先列出冲突。","Showing current physical buttons and overrides. Conflicts are listed before rebinding.");}
 }

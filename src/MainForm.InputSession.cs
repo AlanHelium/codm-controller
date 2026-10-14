@@ -13,6 +13,7 @@ public partial class MainForm
     private long _nextIsolationRetry;
     private bool PreparePhysicalInputSession(ControllerDevice[]? discovered=null)
     {
+        if(UiPreview.Enabled)return false;
         lock(_inputSessionGate)
         {
             _physicalSessionReady=false;
@@ -52,6 +53,7 @@ public partial class MainForm
     }
     private void CheckNewPhysicalDevices()
     {
+        if(UiPreview.Enabled)return;
         if(!_running||_physicalSessionPreparing||_closingInputSession||Environment.TickCount64<_nextIsolationRetry)return;
         var candidates=DeviceCatalog.HideCandidates(_controllerDiscovery.Devices);
         _physicalXInputCandidate=ControllerVisuals.HasPhysicalXInputCandidate(_controllerDiscovery.Devices);
@@ -67,6 +69,7 @@ public partial class MainForm
     }
     private void RestorePhysicalInputSession()
     {
+        if(UiPreview.Enabled)return;
         _physicalSessionReady=false;
         lock(_inputSessionGate)
         {

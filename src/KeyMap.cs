@@ -35,6 +35,7 @@ public sealed class KeyMap
     public bool NormalizeConflicts()
     {
         int[] defaults={0x1000,0x2000,0x4000,0x8000,LT,RT,0x0100,0x0200,0x0080};
+        for(int i=0;i<9;i++)if(!SettingsStore.IsValidBind(ActionBinding(i)))SetActionBinding(i,defaults[i]);
         var groups=Enumerable.Range(0,9).GroupBy(ActionBinding).Where(g=>g.Count()>1).Select(g=>g.ToArray()).ToArray();
         foreach(var group in groups)
         {

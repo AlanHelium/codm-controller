@@ -11,6 +11,11 @@ namespace CODMControllerProbe;
 /// </summary>
 public class AppSettings
 {
+    public int ActionMappingVersion {get;set;}
+    public bool EnableKeyboardChords {get;set;}
+    public List<PadKeyboardChord> KeyboardChords {get;set;}=new();
+    public bool ExperimentalCursorEnabled {get;set;}
+    public int ExperimentalCursorKey {get;set;}=0x0040;
     public CurveData Left { get; set; } = new();
     public CurveData Right { get; set; } = new();
     public CurveData RightAds { get; set; } = new(); // 开镜（按住 LT）专用右摇杆
@@ -313,6 +318,7 @@ public class AppSettings
                 new[] { 0.80487806f, 0.8f },
                 new[] { 1f, 1f }),
             MapJump = 0x1000,
+            ActionMappingVersion = 2,
             MapCrouch = 0x2000,
             MapReload = 0x4000,
             MapSwitch = 0x8000,

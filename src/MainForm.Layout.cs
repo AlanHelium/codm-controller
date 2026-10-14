@@ -151,14 +151,14 @@ public partial class MainForm
         UiLayout.Add(body,StudioAction(Lang.T("保留当前设置","Keep current settings"),()=>confirm.Close()));
         confirm.Controls.Add(body);MountStudioForm(confirm);
     }
-    internal void MountStudioForm(Form form,string? title=null,bool root=false)
+    internal void MountStudioForm(Form form,string? title=null,bool root=false,bool keepParentOnClose=false)
     {
         foreach(Control c in _studioContent.Controls)c.Visible=false;
         var wrapper=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=Padding.Empty,Padding=new Padding(Dpi.Px(24),Dpi.Px(16),Dpi.Px(24),Dpi.Px(16)),BackColor=StudioTheme.Background};wrapper.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));wrapper.RowStyles.Add(new RowStyle(SizeType.AutoSize));wrapper.RowStyles.Add(new RowStyle(SizeType.Percent,100));
         var bar=new TableLayoutPanel{AutoSizeMode=AutoSizeMode.GrowAndShrink,Dock=DockStyle.Top,AutoSize=true,ColumnCount=2,RowCount=1,Margin=new Padding(0,0,0,Dpi.Px(12))};bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));if(!root)bar.Controls.Add(StudioAction(Lang.T("← 返回","← Back"),()=>form.Close()),0,0);var heading=StudioText(title??form.Text,root?24:16,true);heading.Margin=new Padding(root?0:Dpi.Px(12),Dpi.Px(7),0,0);bar.Controls.Add(heading,1,0);wrapper.Controls.Add(bar,0,0);
         form.TopLevel=false;form.FormBorderStyle=FormBorderStyle.None;form.ControlBox=false;form.MinimumSize=Size.Empty;form.MaximumSize=Size.Empty;form.Dock=DockStyle.Fill;form.Margin=Padding.Empty;StudioTheme.Apply(form);wrapper.Controls.Add(form,0,1);_studioContent.Controls.Add(wrapper);wrapper.BringToFront();_studioForms.Add(form);
         foreach(var button in Descendants(form).OfType<Button>().Where(b=>b.DialogResult!=DialogResult.None))button.Click+=(_,_)=>{if(!form.IsDisposed)form.Close();};
-        form.FormClosed+=(_,_)=>{_studioForms.Remove(form);if(_studioNavigating||IsDisposed)return;BeginInvoke(()=>{if(IsDisposed||_studioNavigating)return;wrapper.Dispose();if(_studioForms.Count==1&&_studioForms[0] is SettingsForm)ShowStudioSection(_studioSection);else if(_studioForms.Count>0){var parent=_studioForms[^1];parent.Parent!.Visible=true;parent.Parent.BringToFront();UiLayout.FitText(parent);}else ShowStudioSection(_studioSection);RefreshSensArea();});};form.Show();UiLayout.FitText(form);
+        form.FormClosed+=(_,_)=>{_studioForms.Remove(form);if(_studioNavigating||IsDisposed)return;BeginInvoke(()=>{if(IsDisposed||_studioNavigating)return;wrapper.Dispose();if(!keepParentOnClose&&_studioForms.Count==1&&_studioForms[0] is SettingsForm)ShowStudioSection(_studioSection);else if(_studioForms.Count>0){var parent=_studioForms[^1];parent.Parent!.Visible=true;parent.Parent.BringToFront();UiLayout.FitText(parent);}else ShowStudioSection(_studioSection);RefreshSensArea();});};form.Show();UiLayout.FitText(form);
     }
     private static IEnumerable<Control> Descendants(Control root){foreach(Control child in root.Controls){yield return child;foreach(var nested in Descendants(child))yield return nested;}}
     [DllImport("user32.dll")]private static extern bool ReleaseCapture();

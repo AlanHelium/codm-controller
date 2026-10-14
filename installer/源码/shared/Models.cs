@@ -4,7 +4,7 @@ namespace Burrito.Installer;
 
 public static class Product
 {
-    public const string Name="CODM 手柄转换器",Version="3.4.5",Marker="Burrito.CODM.Install.v1";
+    public const string Name="CODM 手柄转换器",Version="3.4.6",Marker="Burrito.CODM.Install.v1";
     public const string RegistryKey=@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\CODMControllerProbe";
     public const string RecordName="installation.json",MainName="CODMControllerProbe.exe",UninstallName="CODMControllerProbeUninstaller.exe";
     public static string DefaultRoot=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Programs","Burrito","CODMControllerProbe");

@@ -111,7 +111,10 @@ public sealed class SettingsForm : Form
         List<PadKeyBind> padKeyMap, Action<List<PadKeyBind>> onKeyMapChanged,
         bool expRsCombo, Action<bool> onExpRsChanged,
         bool fireModeEnabled, int fireModeHoldMs, bool fireModeUseCombo, int fireModeKey, ushort fireModeCombo,
-        Action<bool, int, bool, int, ushort> onFireModeChanged, int initialSection = -1, Action? onReport = null, Func<string>? movementStatus = null, Func<string>? mappingStatus = null, Action? onCleanup = null)
+        Action<bool, int, bool, int, ushort> onFireModeChanged, int initialSection = -1, Action? onReport = null, Func<string>? movementStatus = null, Func<string>? mappingStatus = null, Action? onCleanup = null,
+        bool keyboardChordsEnabled=false,List<PadKeyboardChord>? keyboardChords=null,Func<bool,IEnumerable<PadKeyboardChord>,Task<bool>>? onKeyboardChords=null,
+        bool experimentalCursorEnabled=false,int experimentalCursorKey=0x0040,Func<bool,int,Task<bool>>? onExperimentalCursor=null,
+        Func<List<PadKeyBind>,Task<bool>>? confirmKeyboardBindings=null,Action<bool>? captureChanged=null,Func<(bool Enabled,List<PadKeyboardChord> Bindings)>? readKeyboardChords=null)
     {
         _versionLevel = versionLevel;
         _onSensLevel = onSensLevel;
@@ -246,7 +249,7 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
         var keyboard=UiLayout.Card(keys,Lang.T("手柄 → 键盘映射","Pad → keyboard mapping"),Lang.T("为指定手柄键选择一个键盘按键。","Choose a keyboard key for each pad button."));
         var bindings=UiLayout.Text(Lang.T($"已设置 {_padKeyMap.Count} 条映射",$"{_padKeyMap.Count} bindings configured")); UiLayout.Add(keyboard,bindings);
         UiLayout.Action(keyboard,Lang.T("编辑键盘映射 →","Edit keyboard mapping →"),()=>{
-            var form=new KeyBindForm(new List<PadKeyBind>(_padKeyMap),list=>{_padKeyMap=list;_onKeyMapChanged(list);bindings.Text=Lang.T($"已设置 {list.Count} 条映射",$"{list.Count} bindings configured");});
+            var form=new KeyBindForm(new List<PadKeyBind>(_padKeyMap),list=>{_padKeyMap=list;_onKeyMapChanged(list);bindings.Text=Lang.T($"已设置 {list.Count} 条映射",$"{list.Count} bindings configured");},confirmKeyboardBindings,captureChanged);
             OpenInline(form, Lang.T("键盘映射","Keyboard mapping"));
         },true);
         if(mappingStatus!=null)
@@ -339,6 +342,22 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
         }
         if(initialSection<0 || initialSection==6) {
         var experiments=_pages[6].Stack;
+        if(onKeyboardChords!=null)
+        {
+            var comboCard=UiLayout.Card(experiments,Lang.T("单键 → 键盘组合 · 实验","One button → keyboard chord · experimental"),Lang.T("一个实体手柄键同时按下两个键盘键，替代原手柄动作。例如 RT → V + B。","One physical pad button presses two keyboard keys and replaces its original action, e.g. RT → V + B."));
+            bool chordOn=keyboardChordsEnabled;var chordList=(keyboardChords??new()).Select(c=>c.Normalize()!).Where(c=>c!=null).ToList();
+            var description=UiLayout.Text(chordList.Count==0?Lang.T("尚未设置组合","No chords configured"):string.Join("；",chordList.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name)));UiLayout.Add(comboCard,description);
+            UiLayout.Action(comboCard,Lang.T("配置实验组合映射 →","Configure experimental chords →"),()=>{if(readKeyboardChords!=null){var state=readKeyboardChords();chordOn=state.Enabled;chordList=state.Bindings;}OpenInline(new KeyboardChordForm(chordOn,chordList,async(en,next)=>{bool accepted=await onKeyboardChords(en,next);if(accepted&&!IsDisposed){chordOn=en;chordList=next;description.Text=Lang.T(en?"已启用：":"已停用：",en?"Enabled: ":"Disabled: ")+string.Join("；",next.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name));}return accepted;}),Lang.T("实验组合映射","Experimental chord mappings"));},true);
+            if(readKeyboardChords!=null){var stateTimer=new System.Windows.Forms.Timer{Interval=200};stateTimer.Tick+=(_,_)=>{if(Visible){var state=readKeyboardChords();description.Text=Lang.T(state.Enabled?"已启用：":"已停用：",state.Enabled?"Enabled: ":"Disabled: ")+string.Join("；",state.Bindings.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name));}};Shown+=(_,_)=>stateTimer.Start();Disposed+=(_,_)=>stateTimer.Dispose();}
+        }
+        if(onExperimentalCursor!=null)
+        {
+            var cursorCard=UiLayout.Card(experiments,Lang.T("单键切光标并移到左上角 · 实验","Single-button cursor toggle & corner move · experimental"),Lang.T("发送 U 切换光标，随后移至游戏窗口左上角。启用后替代原组合触发及此键原有动作。","Send U to toggle the cursor, then move it to the game's top-left corner. Replaces the old combo trigger and this button's original action."));
+            bool cursorOn=experimentalCursorEnabled;int cursorKey=experimentalCursorKey;var picker=KeyboardChordForm.PadPicker(cursorKey);UiLayout.Add(cursorCard,UiLayout.Text(Lang.T("实体触发键","Physical trigger button")));UiLayout.Add(cursorCard,picker);
+            var check=UiLayout.Check(cursorCard,Lang.T("启用单键切光标","Enable single-button cursor toggle"),cursorOn,_=>{});bool sync=false;
+            async Task ApplyCursor(){if(sync)return;sync=true;bool desired=check.Checked;int key=MappingPolicy.PadSources[picker.SelectedIndex];check.Enabled=picker.Enabled=false;try{bool accepted=await onExperimentalCursor(desired,key);if(IsDisposed)return;if(accepted){cursorOn=desired;cursorKey=key;}else{check.Checked=cursorOn;picker.SelectedIndex=Array.IndexOf(MappingPolicy.PadSources,cursorKey);}}finally{sync=false;if(!IsDisposed)check.Enabled=picker.Enabled=true;}}
+            check.CheckedChanged+=async(_,_)=>await ApplyCursor();picker.SelectedIndexChanged+=async(_,_)=>await ApplyCursor();
+        }
         int gyroSensitivity=_gyroSens,gyroDzValue=_gyroDz,gyroSmValue=_gyroSm; bool gyroOn=_gyroEnabled,invX=_gyroInvX,invY=_gyroInvY;
         void SendGyro()=>_onGyroChanged(gyroOn,gyroSensitivity,gyroDzValue,gyroSmValue,invX,invY);
         var gyro=UiLayout.Card(experiments,Lang.T("体感瞄准 · 实验","Gyro aim · experimental"),Lang.T("需要带六轴传感器的 Sony 手柄。","Requires a Sony pad with a six-axis sensor."));
@@ -352,9 +371,7 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
         UiLayout.Check(touch,Lang.T("启用触屏滑动","Enable touch movement"),touchOn,v=>{touchOn=v;if(v)wasdOn=false;SendMovement();});
         UiLayout.Slider(touch,Lang.T("滑动半径","Slide radius"),touchRadius,40,300,v=>v+" px",v=>{touchRadius=v;SendMovement();});
         UiLayout.Slider(touch,Lang.T("触屏灵敏度","Touch sensitivity"),touchSensitivity,50,150,v=>v+"%",v=>{touchSensitivity=v;SendMovement();});
-        var comboCard=UiLayout.Card(experiments,Lang.T("组合注入与原始报告","Combo injection & raw reports"));
-        UiLayout.Check(comboCard,Lang.T("R3 同时发送 V + B","R3 sends V + B"),_expRsCombo,v=>{_expRsCombo=v;_onExpRsChanged(v);});
-        UiLayout.Action(comboCard,Lang.T("查看原始 HID 报告 →","Raw HID report viewer →"),onHidProbe);
+        var rawCard=UiLayout.Card(experiments,Lang.T("原始报告","Raw reports"));UiLayout.Action(rawCard,Lang.T("查看原始 HID 报告 →","Raw HID report viewer →"),onHidProbe);
 
         }
         UiPreview.Attach(this);

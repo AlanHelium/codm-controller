@@ -12,6 +12,8 @@ namespace CODMControllerProbe;
 /// </summary>
 public sealed class KeyBindForm : Form
 {
+    private readonly Func<List<PadKeyBind>,Task<bool>>? _confirm;
+    private readonly Action<bool>? _captureChanged;
     private readonly List<(int padBit, string padName, Label keyLbl, Button setBtn, Button clearBtn)> _rows = new();
     private readonly List<PadKeyBind> _bindings;
     private readonly Action<List<PadKeyBind>> _onChange;   // 变更后立即保存
@@ -29,8 +31,9 @@ public sealed class KeyBindForm : Form
         (0x0010, "Option"), (0x0020, "View"), (0x0400, "Home"),
     };
 
-    public KeyBindForm(List<PadKeyBind> bindings, Action<List<PadKeyBind>> onChange)
+    public KeyBindForm(List<PadKeyBind> bindings, Action<List<PadKeyBind>> onChange,Func<List<PadKeyBind>,Task<bool>>? confirm=null,Action<bool>? captureChanged=null)
     {
+        _confirm=confirm;_captureChanged=captureChanged;
         _bindings = bindings;
         _onChange = onChange;
         Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
@@ -129,6 +132,7 @@ public sealed class KeyBindForm : Form
 
     private void BeginCapture(int padBit)
     {
+        _captureChanged?.Invoke(true);
         _capturePadBit = padBit;
         foreach (var (bit, _, keyLbl, _, _) in _rows)
             if (bit == padBit) keyLbl.Text = Lang.T("等待键盘按键…（Esc 取消）", "Waiting for keyboard key… (Esc cancels)");
@@ -139,6 +143,7 @@ public sealed class KeyBindForm : Form
 
     private void CancelCapture()
     {
+        _captureChanged?.Invoke(false);
         _capturePadBit = -1;
         _flashTimer.Stop();
         RefreshRows();
@@ -146,7 +151,7 @@ public sealed class KeyBindForm : Form
         _hint.ForeColor = Color.FromArgb(107, 114, 128);
     }
 
-    private void OnCaptureKey(object? sender, KeyEventArgs e)
+    private async void OnCaptureKey(object? sender, KeyEventArgs e)
     {
         if (_capturePadBit < 0) return;
         if (e.KeyCode == Keys.Escape) { CancelCapture(); return; }
@@ -161,8 +166,9 @@ public sealed class KeyBindForm : Form
         _capturePadBit = -1;
         _flashTimer.Stop();
         // 同一手柄键只保留一条；更新或新增
-        _bindings.RemoveAll(b => b.PadBit == padBit);
-        _bindings.Add(PadKeyBind.Of(padBit, k));
+        var candidate=_bindings.Where(b=>b.PadBit!=padBit).ToList();candidate.Add(PadKeyBind.Of(padBit,k));
+        bool accepted=_confirm==null||await _confirm(candidate);if(IsDisposed)return;if(!accepted){CancelCapture();return;}
+        _bindings.Clear();_bindings.AddRange(candidate);_captureChanged?.Invoke(false);
         RefreshRows();
         _hint.Text = Lang.T("已绑定：" + PadNameOf(padBit) + " → " + k.Name + "。", "Bound: " + PadNameOf(padBit) + " → " + k.Name + ".");
         _hint.ForeColor = Color.FromArgb(5, 150, 105);
@@ -193,7 +199,7 @@ public sealed class KeyBindForm : Form
     }
     protected override void Dispose(bool disposing)
     {
-        if(disposing){_flashTimer?.Stop();_flashTimer?.Dispose();}
+        if(disposing){_captureChanged?.Invoke(false);_flashTimer?.Stop();_flashTimer?.Dispose();}
         base.Dispose(disposing);
     }
     protected override bool ProcessCmdKey(ref Message msg,Keys keyData)

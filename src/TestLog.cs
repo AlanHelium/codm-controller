@@ -21,6 +21,7 @@ public static class TestLog
 
     public static void Add(string line)
     {
+        if(UiPreview.Enabled)return;
         string entry = $"{DateTime.Now:HH:mm:ss.fff} {line}";
         _lines.Enqueue(entry);
         while (_lines.Count > 800) _lines.TryDequeue(out _);

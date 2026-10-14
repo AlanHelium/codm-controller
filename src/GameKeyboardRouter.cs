@@ -44,6 +44,8 @@ public sealed class GameKeyboardRouter
     }
     public bool Delivered(string owner)
     {lock(_gate)return _desired.TryGetValue(owner,out var key)&&_held.TryGetValue(key,out var target)&&target.Handle==_target.Handle&&target.ProcessId==_target.ProcessId;}
+    public bool ReleasePending(GameKey key)
+    {lock(_gate){key=key.Canonical;return _held.ContainsKey(key)&&!_desired.Values.Contains(key);}}
     public string MappingStatus()
     {
         lock(_gate)
@@ -66,7 +68,7 @@ public sealed class GameKeyboardRouter
         if(_desired.Count==0&&_held.Count==0)return;
         long now=_clock();if(!force&&!_dirty&&now-_pumped<8)return;_pumped=now;_dirty=false;
         if(force||now-_targetChecked>=200||(_target.Handle!=IntPtr.Zero&&!_alive(_target))){_target=_resolve();_targetChecked=now;}
-        foreach(var pair in _held.ToArray())
+        foreach(var pair in _held.OrderBy(p=>p.Key.Vk is 0x10 or 0x11 or 0x12?1:0).ToArray())
         {
             bool sameTarget=pair.Value.Handle==_target.Handle&&pair.Value.ProcessId==_target.ProcessId;
             if(sameTarget&&_desired.Values.Contains(pair.Key))continue;
@@ -75,7 +77,7 @@ public sealed class GameKeyboardRouter
             if(_send(pair.Value,pair.Key,false)){_held.Remove(pair.Key);_retry.Remove((pair.Key,false));_repeatDue.Remove(pair.Key);_log($"键盘投递 OFF VK=0x{pair.Key.Vk:X2} →「{pair.Value.Title}」");}
             else{_retry[(pair.Key,false)]=now+125;Failure(now,$"抬起失败 VK=0x{pair.Key.Vk:X2}，保留状态重试");}
         }
-        foreach(var key in _desired.Values.Distinct())
+        foreach(var key in _desired.Values.Distinct().OrderBy(k=>k.Vk is 0x10 or 0x11 or 0x12?0:1))
         {
             if(_held.ContainsKey(key))continue;
             if(_target.Handle==IntPtr.Zero){Failure(now,"无游戏窗口，映射待投递；不会触发转换器界面");continue;}

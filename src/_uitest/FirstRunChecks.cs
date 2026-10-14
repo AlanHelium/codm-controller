@@ -94,7 +94,7 @@ static class FirstRunChecks
         typeof(MainForm).GetField("_componentWaiting",Private)!.SetValue(main,false);typeof(MainForm).GetField("_conversionError",Private)!.SetValue(main,"");
         var displayed=idle;
         using var diagnostic=new DiagForm(()=>Task.FromResult(displayed),()=>{},()=>{}){StartPosition=FormStartPosition.Manual,Location=new(-32000,-32000)};
-        typeof(MainForm).GetMethod("MountStudioForm",Private)!.Invoke(main,[diagnostic,null,false]);Application.DoEvents();
+        typeof(MainForm).GetMethod("MountStudioForm",Private)!.Invoke(main,[diagnostic,null,false,false]);Application.DoEvents();
         Wait((Task)typeof(DiagForm).GetMethod("RefreshAsync",Private)!.Invoke(diagnostic,null)!);
         Check(Children(diagnostic).OfType<Label>().Count(l=>l.Text.StartsWith("✓"))==3,"Initial diagnostic display does not show three ready items");Render(main,Path.Combine(folder,"首次诊断-就绪未转换.png"));
         displayed=idle with{Running=true,InputReadable=true,VirtualConnected=true,IsolationReady=true,AudioRequested=true,AudioRunning=true};

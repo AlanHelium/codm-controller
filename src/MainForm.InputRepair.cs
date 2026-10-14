@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace CODMControllerProbe;
@@ -55,14 +55,15 @@ public partial class MainForm
     }
     private void ReplaceKeyboardBindings(IEnumerable<PadKeyBind> bindings)
     {
+        var next=bindings.Select(PadKeyBind.Resolve).Where(b=>b!=null).Select(b=>b!).GroupBy(b=>b.PadBit).Select(g=>g.Last()).ToArray();
         lock(_keyboardBindingGate)
         {
+            var changed=next.Where(b=>!_padKeyMap.Any(old=>old.PadBit==b.PadBit&&old.KeyName==b.KeyName)).Select(b=>b.PadBit).ToArray();
             // Publish an empty snapshot first, preventing the input loop from rearming old owners.
             Volatile.Write(ref _keyboardBindings,Array.Empty<PadKeyBind>());
             PauseOutput(); // Release old hold actions before the newly bound key can press the same keyboard key.
-            _gameKeys.Release("pad:");_padKeyMap.Clear();
-            foreach(var binding in bindings){var resolved=PadKeyBind.Resolve(binding);if(resolved!=null)_padKeyMap.Add(resolved);}
-            Volatile.Write(ref _keyboardBindings,_padKeyMap.GroupBy(b=>b.PadBit).Select(g=>g.Last()).ToArray());
+            _gameKeys.Release("pad:");ClearSourceOverrides(changed);_padKeyMap.Clear();_padKeyMap.AddRange(next);
+            ResetMappingTransient();PublishMappingSnapshots();
         }
     }
     private XInputNative.XInputGamepad WithoutKeyboardBoundInputs(XInputNative.XInputGamepad input)
