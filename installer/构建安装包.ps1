@@ -15,9 +15,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '安装器编译失败' }
     $taskRelease = Join-Path $taskRoot '待发布'
     New-Item -ItemType Directory -Path $taskRelease -Force | Out-Null
-    Copy-Item -LiteralPath 'dist\setup-build\CODMControllerProbeSetup.exe' -Destination (Join-Path $taskRelease 'CODM手柄转换器-Setup-v3.4.6.exe') -Force
+    Copy-Item -LiteralPath 'dist\setup-build\CODMControllerProbeSetup.exe' -Destination (Join-Path $taskRelease 'CODM手柄转换器-Setup-v3.4.7.exe') -Force
     Copy-Item -LiteralPath 'payload\必看 README.TXT' -Destination $taskRelease -Force
     Copy-Item -LiteralPath 'payload\赞赏码.png' -Destination $taskRelease -Force
-    $taskPublicFiles = @('CODM手柄转换器-Setup-v3.4.6.exe','必看 README.TXT','赞赏码.png')
+    $taskPublicFiles = @('CODM手柄转换器-Setup-v3.4.7.exe','必看 README.TXT','赞赏码.png')
     $taskPublicFiles | ForEach-Object { $taskHash=Get-FileHash -LiteralPath (Join-Path $taskRelease $_) -Algorithm SHA256; $taskHash.Hash+'  '+$_ } | Set-Content -LiteralPath (Join-Path $taskRelease 'SHA256.txt') -Encoding UTF8
 } finally { Pop-Location }

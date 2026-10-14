@@ -220,7 +220,8 @@ public class AppSettings
     public int FireModeKey { get; set; } = 0x0010;
 
     /// <summary>切换武器射击模式双键组合掩码（默认 0=未设置，需在设置里录制；避免与切光标 L3+R3 / 核弹 LB+RB 撞车）。</summary>
-    public ushort FireModeCombo { get; set; } = 0;
+    public int FireModeCombo { get; set; } = 0;
+    public string FireModeKeyboardKey { get; set; } = "B";
 
     /// <summary>是否首次启动（true → 打开后展示使用引导；展示后立即置 false 保存）。</summary>
     public bool FirstRun { get; set; } = true;
@@ -580,7 +581,7 @@ public static class SettingsStore
                 }
             }
             s.PadKeyMap = padMap;
-            s.FireModeHoldMs = s.FireModeHoldMs is >= 100 and <= 1200 ? s.FireModeHoldMs : 250;
+            s.FireModeHoldMs = s.FireModeHoldMs is >= 0 and <= 1200 ? s.FireModeHoldMs : 250;
             s.FireModeKey = IsValidBind(s.FireModeKey) ? s.FireModeKey : 0x0010;
             AppSettings.EnsurePacks(s);
             return s;

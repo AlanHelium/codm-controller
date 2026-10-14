@@ -122,7 +122,7 @@ public partial class MainForm : Form
     private int _fireModeHoldMs = 250;               // 长按判定阈值（独立可调）
     private bool _fireModeUseCombo = true;           // true=双键组合触发；false=单键长按触发
     private int _fireModeKey = 0x0010;               // 单键触发键（默认 Option，不占动作/奔跑/近战键位）
-    private ushort _fireModeCombo;                   // 双键组合掩码（默认 0=未设置，设置页录制）
+    private int _fireModeCombo;                      // 物理来源掩码，包含 LT/RT
     private bool _fireModeWasDown, _fireModeSent;    // 边沿检测 + 已触发标记（触发后屏蔽触发键原生转发）
     private int _fireModeDownTick;                   // 触发键按下时刻
     private long _tapHDownTick;                      // H 按下时刻（0=未按下；按下后保持 80ms 再抬起，确保游戏采样到"一次点击"）
@@ -377,10 +377,12 @@ public partial class MainForm : Form
             LoadExperimentalMappings(s);
             _map.NormalizeConflicts();
             _fireModeEnabled = s.FireModeEnabled;
-            _fireModeHoldMs = s.FireModeHoldMs is >= 100 and <= 1200 ? s.FireModeHoldMs : 250;
+            _fireModeHoldMs = s.FireModeHoldMs is >= 0 and <= 1200 ? s.FireModeHoldMs : 250;
             _fireModeUseCombo = s.FireModeUseCombo;
             _fireModeKey = SettingsStore.IsValidBind(s.FireModeKey) ? s.FireModeKey : 0x0010;
             _fireModeCombo = s.FireModeCombo;
+            _fireModeTarget=KeyboardKeys.ByName(s.FireModeKeyboardKey)?.Name??"B";
+            ResolveShortcutOwnership();
             _fireModeWasDown = _fireModeSent = false;
             _outputHz = s.OutputHz is >= 60 and <= 1000 ? s.OutputHz : 1000;
             _freeSensLevel = s.FreeSensLevel is >= 0 and <= 19 ? s.FreeSensLevel : 9;
@@ -393,7 +395,7 @@ public partial class MainForm : Form
             _fineTuneGains = s.FineTuneGains is { Length: 6 } ? s.FineTuneGains : new[] { 1f, 1f, 1f, 1f, 1f, 1f };
             ApplyVersionedCurves(s); // 按版本档位重建曲线（免费/高级=出厂×档位，Pro=自定义）
             // 会话起点留痕：下次测试日志第一行即可确认运行版本与关键开关，避免"旧进程没退干净/跑错版本"争议。
-            TestLog.Add($"会话启动: 版本=v3.4.6 交换肩键扳机={_swapShoulderTriggers} WASD移动={_expWasdMove} 映射区绑定={_padKeyMap.Count} 条");
+            TestLog.Add($"会话启动: 版本=v3.4.7 交换肩键扳机={_swapShoulderTriggers} WASD移动={_expWasdMove} 映射区绑定={_padKeyMap.Count} 条");
         }
         catch { /* 设置加载失败使用出厂默认 */ }
     }
@@ -466,6 +468,7 @@ public partial class MainForm : Form
         _fireModeUseCombo = true;
         _fireModeKey = 0x0010;
         _fireModeCombo = 0;
+        _fireModeTarget="B";
         _fireModeWasDown = _fireModeSent = false;
         // Legacy tier selection no longer changes feature access.
         ApplyVersionedCurves(d); // 重建 3 套封装 + 激活封装母版 + 按档位派生
@@ -678,6 +681,7 @@ public partial class MainForm : Form
             FireModeUseCombo = _fireModeUseCombo,
             FireModeKey = _fireModeKey,
             FireModeCombo = _fireModeCombo,
+            FireModeKeyboardKey = _fireModeTarget,
             FirstRun = false,
         };
     }
@@ -1964,7 +1968,7 @@ public partial class MainForm : Form
         {
             if (Environment.TickCount - _viewDownTick >= _viewHoldMs)
             {
-                SendKeyState(KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: true, out _);
+                SendNamedKeyState("view-tab",KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: true, out _);
                 _viewHeld = true;
                 _viewRepeatTick = Environment.TickCount;
                 SetStatus("长按视图键 → 已发送 Tab（记分表）", Color.FromArgb(5, 150, 105));
@@ -1975,13 +1979,13 @@ public partial class MainForm : Form
             // 按住保持：每 80ms 重发一次 Tab 按下，保证游戏持续检测到按键（记分板按住显示）
             if (Environment.TickCount - _viewRepeatTick >= 80)
             {
-                SendKeyState(KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: true, out _);
+                SendNamedKeyState("view-tab",KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: true, out _);
                 _viewRepeatTick = Environment.TickCount;
             }
         }
         else if (!down && _viewWasDown && _viewHeld)
         {
-            SendKeyState(KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: false, out _);
+            SendNamedKeyState("view-tab",KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: false, out _);
             _viewHeld = false;
             SetStatus("视图键松开 → 已抬起 Tab", Color.FromArgb(107, 114, 128));
         }
@@ -2000,7 +2004,7 @@ public partial class MainForm : Form
         bool down = SonyHidPad.TouchpadPressed;
         if (down && !_touchpadWasDown)
         {
-            SendKeyState(KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: true, out _);
+            SendNamedKeyState("touchpad-tab",KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: true, out _);
             _touchpadHeld = true;
             _touchpadRepeatTick = Environment.TickCount;
             TestLog.Add($"触摸板按下 → Tab ON");
@@ -2011,13 +2015,13 @@ public partial class MainForm : Form
             // 按住保持：每 80ms 重发一次 Tab 按下，保证游戏持续检测到按键（记分板按住显示）
             if (Environment.TickCount - _touchpadRepeatTick >= 80)
             {
-                SendKeyState(KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: true, out _);
+                SendNamedKeyState("touchpad-tab",KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: true, out _);
                 _touchpadRepeatTick = Environment.TickCount;
             }
         }
         else if (!down && _touchpadWasDown && _touchpadHeld)
         {
-            SendKeyState(KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: false, out _);
+            SendNamedKeyState("touchpad-tab",KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: false, out _);
             _touchpadHeld = false;
             TestLog.Add($"触摸板松开 → Tab OFF");
             SetStatus("触摸板松开 → 已抬起 Tab", Color.FromArgb(107, 114, 128));
@@ -2240,40 +2244,33 @@ public partial class MainForm : Form
     /// </summary>
     private void TrackFireModeSwap(XInputNative.XInputGamepad g)
     {
-        if (!_fireModeEnabled)
+        if (_shortcutMask==0)
         {
+            if(_fireModeWasDown||_fireModeSent)_gameKeys.Release("shortcut");
             _fireModeWasDown = false;
             _fireModeSent = false;
             _fireModeDownTick = 0;
             return;
         }
-        bool down;
-        if (_fireModeUseCombo)
-        {
-            down = _fireModeCombo != 0 && (g.wButtons & _fireModeCombo) == _fireModeCombo; // 组合仅按钮位（不含扳机）
-        }
-        else
-        {
-            down = KeyMap.Hit(_fireModeKey, g.wButtons, g.bLeftTrigger, g.bRightTrigger);
-        }
+        bool down=(MappingPolicy.Pressed(g)&_shortcutMask)==_shortcutMask;
         if (down && !_fireModeWasDown)
         {
             _fireModeDownTick = Environment.TickCount;
             _fireModeSent = false;
         }
-        else if (down && _fireModeWasDown && !_fireModeSent)
+        if (down && !_fireModeSent)
         {
             if (Environment.TickCount - _fireModeDownTick >= _fireModeHoldMs)
             {
-                SendVirtualKey(KEY_B_VK, KEY_B_SCAN, "B", out _);
-                _fireModeSent = true;
-                TestLog.Add("切换武器射击模式 → B 已投递");
-                SetStatus("长按 → 已发送 B（切换武器射击模式）", Color.FromArgb(5, 150, 105));
-                AnnounceEvent("Fire mode");
+                var key=_shortcutKeyboard;
+                _gameKeys.SetDesired("shortcut",new(key.Vk,key.Scan,key.Extended),true);_gameKeys.Pump();
+                _fireModeSent=_gameKeys.Delivered("shortcut");
+                if(_fireModeSent){TestLog.Add("手柄快捷键 → "+_fireModeTarget+" ON");SetStatus(ReadPadShortcut().Description,Color.FromArgb(5,150,105));}
             }
         }
         else if (!down)
         {
+            _gameKeys.Release("shortcut");
             _fireModeSent = false;   // 松开：允许下次重新触发
         }
         _fireModeWasDown = down;
@@ -3445,8 +3442,8 @@ public partial class MainForm : Form
                 _fireModeKey = key;
                 _fireModeCombo = mask;
                 _fireModeWasDown = _fireModeSent = false;
-                SaveSettingsNow();
-            }, initialSection:section,onReport:()=>MountStudioForm(new DiagnosticForm(BuildDiagnosticReport)),movementStatus:WasdLiveStatus,mappingStatus:()=>_gameKeys.MappingStatus(),onCleanup:()=>{Close();UninstallDrivers();},keyboardChordsEnabled:_keyboardChordsEnabled,keyboardChords:_keyboardChords.Select(c=>c.Normalize()!).ToList(),onKeyboardChords:SetKeyboardChords,experimentalCursorEnabled:_experimentalCursorEnabled,experimentalCursorKey:_experimentalCursorKey,onExperimentalCursor:SetExperimentalCursor,confirmKeyboardBindings:ConfirmKeyboardBindings,captureChanged:SetMappingCapture,readKeyboardChords:()=>{lock(_keyboardBindingGate)return(_keyboardChordsEnabled,_keyboardChords.Select(c=>c.Normalize()!).ToList());});
+                MappingEdited(()=>{});
+            }, initialSection:section,onReport:()=>MountStudioForm(new DiagnosticForm(BuildDiagnosticReport)),movementStatus:WasdLiveStatus,mappingStatus:()=>_gameKeys.MappingStatus(),onCleanup:()=>{Close();UninstallDrivers();},keyboardChordsEnabled:_keyboardChordsEnabled,keyboardChords:_keyboardChords.Select(c=>c.Normalize()!).ToList(),onKeyboardChords:SetKeyboardChords,experimentalCursorEnabled:_experimentalCursorEnabled,experimentalCursorKey:_experimentalCursorKey,onExperimentalCursor:SetExperimentalCursor,confirmKeyboardBindings:ConfirmKeyboardBindings,captureChanged:SetMappingCapture,readKeyboardChords:()=>{lock(_keyboardBindingGate)return(_keyboardChordsEnabled,_keyboardChords.Select(c=>c.Normalize()!).ToList());},readShortcut:ReadPadShortcut,onShortcut:SetPadShortcut,readPhysical:ReadPhysicalCapture);
         form.PrepareForStudio(section, (child,title) => MountStudioForm(child,title));
         MountStudioForm(form,StudioSections[Math.Clamp(section+1,1,7)],root:true);
         RefreshSensArea(); // 设置窗口里改的档位/趴下 → 主界面总结行同步

@@ -23,7 +23,7 @@ public sealed class KeyboardChordForm : Form
     }
     internal static ComboBox PadPicker(int source)
     {var c=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Font=Assets.Ui(10),Margin=new Padding(0,0,0,Dpi.Px(10))};c.Items.AddRange(MappingPolicy.PadSources.Select(KeyMap.BitName).Cast<object>().ToArray());c.SelectedIndex=Math.Max(0,Array.IndexOf(MappingPolicy.PadSources,source));return c;}
-    private static ComboBox KeyPicker(string name)
+    internal static ComboBox KeyPicker(string name)
     {var c=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Font=Assets.Ui(10),Margin=new Padding(0,0,0,Dpi.Px(10))};c.Items.AddRange(KeyboardKeys.All.Select(k=>k.Name).Cast<object>().ToArray());c.SelectedIndex=Math.Max(0,KeyboardKeys.All.ToList().FindIndex(k=>k.Name==name));return c;}
     private void AddRow(PadKeyboardChord item)
     {

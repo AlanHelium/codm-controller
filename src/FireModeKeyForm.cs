@@ -12,6 +12,8 @@ namespace CODMControllerProbe;
 /// </summary>
 public sealed class FireModeKeyForm : Form
 {
+    private readonly Func<XInputNative.XInputGamepad?>? _readPhysical;
+    private readonly Action<bool>? _captureChanged;
     private readonly bool _initialCombo;
     private readonly int _initialKey;
     private readonly ushort _initialMask;
@@ -23,8 +25,9 @@ public sealed class FireModeKeyForm : Form
     private ushort _pressedBits;        // 组合录制：聚合按下位
     private bool _allReleased;          // 已等待全部松开（准备状态）
 
-    public FireModeKeyForm(bool initialCombo, int initialKey, ushort initialMask, Action<bool, int, ushort> onRecorded)
+    public FireModeKeyForm(bool initialCombo, int initialKey, ushort initialMask, Action<bool, int, ushort> onRecorded,Func<XInputNative.XInputGamepad?>? readPhysical=null,Action<bool>? captureChanged=null)
     {
+        _readPhysical=readPhysical;_captureChanged=captureChanged;
         _initialCombo = initialCombo;
         _initialKey = initialKey;
         _initialMask = initialMask;
@@ -90,6 +93,7 @@ public sealed class FireModeKeyForm : Form
 
     private void StartCapture(int mode)
     {
+        _captureChanged?.Invoke(true);
         _captureMode = mode;
         _pressedBits = 0;
         _allReleased = false;
@@ -103,32 +107,9 @@ public sealed class FireModeKeyForm : Form
     private void PollCapture()
     {
         if (_captureMode < 0) return;
-        ushort buttons = 0;
-        byte lt = 0, rt = 0;
-        bool got = false;
-
-        // XInput slot（与键位修正一致：4 槽内找第一个在线）
-        for (int slot = 0; slot < 4; slot++)
-        {
-            if (XInputNative.XInputGetCapabilities(slot, XInputNative.XINPUT_FLAG_GAMEPAD, out _) !=
-                XInputNative.ERROR_SUCCESS) continue;
-            if (XInputNative.XInputGetState(slot, out var st) == XInputNative.ERROR_SUCCESS)
-            {
-                buttons |= st.Gamepad.wButtons;
-                lt = Math.Max(lt, st.Gamepad.bLeftTrigger);
-                rt = Math.Max(rt, st.Gamepad.bRightTrigger);
-                got = true;
-            }
-            break;   // 只读第一个在线 slot（与键位修正一致）
-        }
-        if (!got && !SonyHidPad.IsOpen && !XboxHidPad.IsOpen)
-        {
-            if (SonyHidPad.Open()) got = true;
-            else if (XboxHidPad.Open()) got = true;
-        }
-        if (SonyHidPad.IsOpen && SonyHidPad.Read(out var sg)) { buttons |= sg.wButtons; lt = Math.Max(lt, sg.bLeftTrigger); rt = Math.Max(rt, sg.bRightTrigger); got = true; }
-        if (XboxHidPad.IsOpen && XboxHidPad.Read(out var xg)) { buttons |= xg.wButtons; lt = Math.Max(lt, xg.bLeftTrigger); rt = Math.Max(rt, xg.bRightTrigger); got = true; }
-        if (!got) return;
+        var frame=_readPhysical?.Invoke();
+        if(frame==null){_hint.Text=Lang.T("请连接实体手柄并启动转换。","Connect a physical pad and start conversion.");return;}
+        ushort buttons=frame.Value.wButtons;byte lt=frame.Value.bLeftTrigger,rt=frame.Value.bRightTrigger;
 
         bool anyDown = buttons != 0 || lt > 30 || rt > 30;
         if (!_allReleased)
@@ -168,6 +149,7 @@ public sealed class FireModeKeyForm : Form
     {
         _timer.Stop();
         _captureMode = -1;
+        _captureChanged?.Invoke(false);
         _onRecorded(combo, key, mask);
         _hint.Text = combo
             ? Lang.T("已录制组合：" + ComboMaskName(mask), "Recorded combo: " + ComboMaskName(mask))
@@ -179,7 +161,7 @@ public sealed class FireModeKeyForm : Form
     private static string ComboMaskName(ushort mask) => KeyMap.ComboName(mask);
     protected override void Dispose(bool disposing)
     {
-        if(disposing){_timer?.Stop();_timer?.Dispose();}
+        if(disposing){_captureChanged?.Invoke(false);_timer?.Stop();_timer?.Dispose();}
         base.Dispose(disposing);
     }
 }

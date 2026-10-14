@@ -70,8 +70,8 @@ public sealed class SettingsForm : Form
     private int _fireModeHoldMs = 250;
     private bool _fireModeUseCombo = true;
     private int _fireModeKey = 0x0010;
-    private ushort _fireModeCombo;
-    private readonly Action<bool, int, bool, int, ushort> _onFireModeChanged = (_, _, _, _, _) => { };
+    private int _fireModeCombo;
+    private readonly Action<bool, int, bool, int, int> _onFireModeChanged = (_, _, _, _, _) => { };
     private readonly bool _expTouchOn;
     private readonly int _expTouchRadius;
     private readonly int _expTouchSens;
@@ -110,11 +110,11 @@ public sealed class SettingsForm : Form
         // ---- v3.1：按键映射区 + 实验 R3 组合 + 切换武器射击模式 ----
         List<PadKeyBind> padKeyMap, Action<List<PadKeyBind>> onKeyMapChanged,
         bool expRsCombo, Action<bool> onExpRsChanged,
-        bool fireModeEnabled, int fireModeHoldMs, bool fireModeUseCombo, int fireModeKey, ushort fireModeCombo,
-        Action<bool, int, bool, int, ushort> onFireModeChanged, int initialSection = -1, Action? onReport = null, Func<string>? movementStatus = null, Func<string>? mappingStatus = null, Action? onCleanup = null,
+        bool fireModeEnabled, int fireModeHoldMs, bool fireModeUseCombo, int fireModeKey, int fireModeCombo,
+        Action<bool, int, bool, int, int> onFireModeChanged, int initialSection = -1, Action? onReport = null, Func<string>? movementStatus = null, Func<string>? mappingStatus = null, Action? onCleanup = null,
         bool keyboardChordsEnabled=false,List<PadKeyboardChord>? keyboardChords=null,Func<bool,IEnumerable<PadKeyboardChord>,Task<bool>>? onKeyboardChords=null,
         bool experimentalCursorEnabled=false,int experimentalCursorKey=0x0040,Func<bool,int,Task<bool>>? onExperimentalCursor=null,
-        Func<List<PadKeyBind>,Task<bool>>? confirmKeyboardBindings=null,Action<bool>? captureChanged=null,Func<(bool Enabled,List<PadKeyboardChord> Bindings)>? readKeyboardChords=null)
+        Func<List<PadKeyBind>,Task<bool>>? confirmKeyboardBindings=null,Action<bool>? captureChanged=null,Func<(bool Enabled,List<PadKeyboardChord> Bindings)>? readKeyboardChords=null,Func<PadShortcut>? readShortcut=null,Func<PadShortcut,Task<bool>>? onShortcut=null,Func<XInputNative.XInputGamepad?>? readPhysical=null)
     {
         _versionLevel = versionLevel;
         _onSensLevel = onSensLevel;
@@ -258,23 +258,6 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
             var deliveryTimer=new System.Windows.Forms.Timer{Interval=150};deliveryTimer.Tick+=(_,_)=>{if(Visible)status.Text=mappingStatus();};
             Shown+=(_,_)=>deliveryTimer.Start();Disposed+=(_,_)=>deliveryTimer.Dispose();
         }
-        var fire=UiLayout.Card(keys,Lang.T("武器射击模式","Weapon fire mode"),Lang.T("长按指定按键或组合，发送键盘 B。","Hold a chosen button or combo to send keyboard B."));
-        int fireMs=_fireModeHoldMs; bool fireOn=_fireModeEnabled;
-        void SendFire()=>_onFireModeChanged(fireOn,fireMs,_fireModeUseCombo,_fireModeKey,_fireModeCombo);
-        UiLayout.Check(fire,Lang.T("启用切换射击模式","Enable fire-mode switch"),fireOn,v=>{fireOn=v;_fireModeEnabled=v;SendFire();});
-        var mode=new ComboBox {DropDownStyle=ComboBoxStyle.DropDownList,Font=Assets.Ui(9.5f),Margin=new Padding(0,0,0,Dpi.Px(12))};
-        mode.Items.AddRange(new object[]{Lang.T("双键组合","Two-button combo"),Lang.T("单键长按","Single-button hold")}); mode.SelectedIndex=_fireModeUseCombo?0:1;
-        UiLayout.Add(fire,UiLayout.Text(Lang.T("触发方式","Trigger method"))); UiLayout.Add(fire,mode);
-        string FireName()=>_fireModeUseCombo?(_fireModeCombo==0?Lang.T("未录制组合","No combo recorded"):KeyMap.ComboName(_fireModeCombo)):KeyMap.BitName(_fireModeKey);
-        var fireName=UiLayout.Text(Lang.T("当前触发：","Current trigger: ")+FireName()); UiLayout.Add(fire,fireName);
-        mode.SelectedIndexChanged+=(_,_)=>{_fireModeUseCombo=mode.SelectedIndex==0;fireName.Text=Lang.T("当前触发：","Current trigger: ")+FireName();SendFire();};
-        UiLayout.Action(fire,Lang.T("录制触发按键 →","Record trigger →"),()=>{
-            var rec=new FireModeKeyForm(_fireModeUseCombo,_fireModeKey,_fireModeCombo,(combo,key,mask)=>{
-                _fireModeUseCombo=combo;_fireModeKey=key;_fireModeCombo=mask;mode.SelectedIndex=combo?0:1;
-                fireName.Text=Lang.T("当前触发：","Current trigger: ")+FireName();SendFire();}); OpenInline(rec, Lang.T("录制触发按键","Record trigger"));
-        });
-        UiLayout.Slider(fire,Lang.T("长按触发时间","Hold duration"),fireMs,100,1200,v=>v+" ms",v=>{fireMs=v;_fireModeHoldMs=v;SendFire();});
-
         }
         if(initialSection<0 || initialSection==2) {
         var movement=_pages[2].Stack;
@@ -349,6 +332,13 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
             var description=UiLayout.Text(chordList.Count==0?Lang.T("尚未设置组合","No chords configured"):string.Join("；",chordList.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name)));UiLayout.Add(comboCard,description);
             UiLayout.Action(comboCard,Lang.T("配置实验组合映射 →","Configure experimental chords →"),()=>{if(readKeyboardChords!=null){var state=readKeyboardChords();chordOn=state.Enabled;chordList=state.Bindings;}OpenInline(new KeyboardChordForm(chordOn,chordList,async(en,next)=>{bool accepted=await onKeyboardChords(en,next);if(accepted&&!IsDisposed){chordOn=en;chordList=next;description.Text=Lang.T(en?"已启用：":"已停用：",en?"Enabled: ":"Disabled: ")+string.Join("；",next.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name));}return accepted;}),Lang.T("实验组合映射","Experimental chord mappings"));},true);
             if(readKeyboardChords!=null){var stateTimer=new System.Windows.Forms.Timer{Interval=200};stateTimer.Tick+=(_,_)=>{if(Visible){var state=readKeyboardChords();description.Text=Lang.T(state.Enabled?"已启用：":"已停用：",state.Enabled?"Enabled: ":"Disabled: ")+string.Join("；",state.Bindings.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name));}};Shown+=(_,_)=>stateTimer.Start();Disposed+=(_,_)=>stateTimer.Dispose();}
+        }
+        if(readShortcut!=null&&onShortcut!=null&&readPhysical!=null&&captureChanged!=null)
+        {
+            var shortcutCard=UiLayout.Card(experiments,Lang.T("双键组合 → 键盘单键 · 实验","Two pad buttons → one keyboard key · experimental"),Lang.T("自选两个手柄键和键盘目标，不再固定为 B；也保留单键长按触发方式。","Choose two pad buttons and any supported keyboard target instead of fixed B; single-button hold is also available."));
+            var current=UiLayout.Text(readShortcut().Enabled?readShortcut().Description:Lang.T("未启用","Disabled"));UiLayout.Add(shortcutCard,current);
+            var refresh=new System.Windows.Forms.Timer{Interval=200};refresh.Tick+=(_,_)=>{if(Visible){var s=readShortcut();current.Text=s.Enabled?s.Description:Lang.T("未启用","Disabled");}};Shown+=(_,_)=>refresh.Start();Disposed+=(_,_)=>refresh.Dispose();
+            UiLayout.Action(shortcutCard,Lang.T("配置手柄快捷键 →","Configure pad shortcut →"),()=>OpenInline(new PadShortcutForm(readShortcut(),onShortcut,readPhysical,captureChanged),Lang.T("手柄快捷键","Pad shortcut")),true);
         }
         if(onExperimentalCursor!=null)
         {
