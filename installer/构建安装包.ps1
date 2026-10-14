@@ -2,6 +2,8 @@ $ErrorActionPreference = 'Stop'
 $taskRoot = $PSScriptRoot
 Push-Location -LiteralPath $taskRoot
 try {
+    Copy-Item -LiteralPath (Join-Path $taskRoot '../必看 README.TXT') -Destination 'payload/必看 README.TXT' -Force
+    Copy-Item -LiteralPath (Join-Path $taskRoot '../赞赏码.png') -Destination 'payload/赞赏码.png' -Force
     dotnet publish '源码\uninstall\Uninstaller.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o 'payload\uninstaller-build'
     if ($LASTEXITCODE -ne 0) { throw '卸载器编译失败' }
     Copy-Item -LiteralPath 'payload\uninstaller-build\CODMControllerProbeUninstaller.exe' -Destination 'payload\CODMControllerProbeUninstaller.exe' -Force
