@@ -16,6 +16,13 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        if(args.Length==2&&args[0]=="--component-report")
+        {
+            // Read-only support report: no virtual pad, input loop or driver writes.
+            var state=ComponentProbe.Capture(AppContext.BaseDirectory);
+            File.WriteAllText(args[1],System.Text.Json.JsonSerializer.Serialize(state,new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
+            return;
+        }
         UiPreview.Enabled = args.Contains("--ui-preview");
         if (IsolationProbe.HandleArguments(args)) return;
         // 启动轨迹：单文件版真机崩溃定位（写公共目录，管理员 TEMP 不混淆）
@@ -30,7 +37,7 @@ static class Program
         System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) =>
             Trace("UnobservedTask: " + e.Exception);
 
-        Trace("Main 进入 args=" + (args.Length > 0 ? args[0] : "无") + " PID=" + Environment.ProcessId + " 版本=v3.4.7");
+        Trace("Main 进入 args=" + (args.Length > 0 ? args[0] : "无") + " PID=" + Environment.ProcessId + " 版本=v" + typeof(Program).Assembly.GetName().Version?.ToString(3));
         // 1ms 计时精度：让输出循环的 1000Hz 节拍真实生效（否则 Sleep(1) 实际 15.6ms）
         try { timeBeginPeriod(1); } catch { }
 

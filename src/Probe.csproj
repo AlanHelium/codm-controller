@@ -12,11 +12,14 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\icons\app.ico</ApplicationIcon>
-    <Version>3.4.7</Version>
-    <Product>CODM Controller Protocol Probe</Product>
-    <Description>诊断工具：读取物理手柄输入，创建虚拟 Xbox360 / DS4 手柄，用于测试游戏识别哪种协议。</Description>
+    <Version>3.5.15</Version>
+    <Product>CODM 手柄转换器</Product>
+    <Description>手柄转换、手感调校、键位映射与连接组件修复。</Description>
     <!-- 免费版 Demo 构建：dotnet publish -p:FreeDemo=true → 锁定免费版、禁用版本切换 -->
     <DefineConstants Condition="'$(FreeDemo)'=='true'">$(DefineConstants);FREEDEMO</DefineConstants>
+
+
+
   </PropertyGroup>
 
   <ItemGroup>
@@ -71,6 +74,7 @@
     <EmbeddedResource Include="assets\voice\voice-own-letsgo.wav" LogicalName="assets.voice.voice_own_letsgo.wav" />
     <EmbeddedResource Include="assets\voice\voice-own-sample3.wav" LogicalName="assets.voice.voice_own_sample3.wav" />
     <!-- 主界面射击游戏主题背景图（手柄玩射击游戏，暖米白+橙，中央留白衬内容） -->
+
     <EmbeddedResource Include="assets\controllers\*.png" LogicalName="assets.controllers.%(Filename)%(Extension)" />
     <EmbeddedResource Include="assets\controller-studio.png" LogicalName="assets.controller-studio.png" />
     <EmbeddedResource Include="assets\bg-shooter.jpg" LogicalName="assets.bg-shooter.jpg" />

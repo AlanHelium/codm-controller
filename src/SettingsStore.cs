@@ -16,6 +16,7 @@ public class AppSettings
     public List<PadKeyboardChord> KeyboardChords {get;set;}=new();
     public bool ExperimentalCursorEnabled {get;set;}
     public int ExperimentalCursorKey {get;set;}=0x0040;
+    public bool LegacyCursorTouchpad {get;set;}
     public CurveData Left { get; set; } = new();
     public CurveData Right { get; set; } = new();
     public CurveData RightAds { get; set; } = new(); // 开镜（按住 LT）专用右摇杆
@@ -34,6 +35,8 @@ public class AppSettings
 
     /// <summary>切换提示语音模式：0=关 1=TTS 2=真人（VoicePlayer 常量）。</summary>
     public int VoiceMode { get; set; } = 1;
+    public bool AudioCursorToggle {get;set;} = true;
+    public List<int> AudioTriggerButtons {get;set;} = new();
 
     /// <summary>Pro 版解锁标记（正式版由激活码设置，调试期由版本按钮切换）。</summary>
     public bool ProUnlocked { get; set; }
@@ -67,7 +70,7 @@ public class AppSettings
     public int InteractHoldMs { get; set; } = 150;
 
     /// <summary>视图键长按 → Tab（打开记分表）。true=长按 View 超阈值向游戏注入 Tab 按下（松开抬起），期间暂停 Share 原生转发。</summary>
-    public bool EnableViewHoldTab { get; set; } = true;
+    public bool EnableViewHoldTab { get; set; } = false;
     public int ViewHoldMs { get; set; } = 200;
 
     /// <summary>推左摇杆（&gt;90%）把屏幕光标移到左上角：重生后光标回到屏幕中央会挡视野，推杆时自动避让。
@@ -86,8 +89,8 @@ public class AppSettings
     /// false=禁用，触发键全程走原生转发。</summary>
     public bool EnableFastInteract { get; set; } = false;
 
-    /// <summary>快速交互触发键（默认 LB，可在键位修正中录制）：按钮位或 LT/RT 虚拟位。</summary>
-    public int InteractKey { get; set; } = 0x0100;
+    /// <summary>快速交互触发键（默认 X，可在键位修正中录制）：按钮位或 LT/RT 虚拟位。</summary>
+    public int InteractKey { get; set; } = 0x4000;
 
     /// <summary>近战/标点绑定键（DS 系 R3 原生即近战+标点同一键）：
     /// 默认 0x0080（R3）——虚拟 DS4 的 R3 位输出给游戏，游戏手柄模式原生触发近战/标点；
@@ -333,7 +336,7 @@ public class AppSettings
             EnableNukeCombo = true,
             NukeHoldMs = 400,
             InteractHoldMs = 150,
-            EnableViewHoldTab = true,
+            EnableViewHoldTab = false,
             ViewHoldMs = 200,
             SwapShoulderTriggers = false,
             EnableFastInteract = false,
@@ -563,7 +566,7 @@ public static class SettingsStore
             s.FreeSensLevel = Math.Clamp(s.FreeSensLevel, 0, 19);
             s.AdsMultiplier = Math.Clamp(s.AdsMultiplier is 0 ? 0.9f : s.AdsMultiplier, 0.5f, 1.5f);
             s.RunThreshold = s.RunThreshold is >= 50 and <= 100 ? s.RunThreshold : 90;
-            s.InteractKey = SettingsStore.IsValidBind(s.InteractKey) ? s.InteractKey : 0x0100;
+            s.InteractKey = SettingsStore.IsValidBind(s.InteractKey) ? s.InteractKey : 0x4000;
             s.MapAim = IsValidBind(s.MapAim) ? s.MapAim : KeyMap.LT;
             s.MapShoot = IsValidBind(s.MapShoot) ? s.MapShoot : KeyMap.RT;
             s.MapTactical = IsValidBind(s.MapTactical) ? s.MapTactical : 0x0100;

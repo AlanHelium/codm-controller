@@ -2,7 +2,7 @@ namespace CODMControllerProbe;
 
 public partial class MainForm
 {
-    private bool _keyboardChordsEnabled,_experimentalCursorEnabled;
+    private bool _keyboardChordsEnabled,_experimentalCursorEnabled,_legacyCursorTouchpad;
     private int _experimentalCursorKey=0x0040;
     private readonly List<PadKeyboardChord> _keyboardChords=new();
     private (int Source,GameKey First,GameKey Second)[] _chordSnapshot=Array.Empty<(int,GameKey,GameKey)>();
@@ -36,7 +36,7 @@ public partial class MainForm
         string name=KeyMap.BitName(source);
         var owner=SourceOverrideName(source);if(owner.Length>0)yield return name+" · "+owner;
         if(_enableFastInteract&&_interactKey==source)yield return name+Lang.T(" · 长按交互 F"," · hold-to-interact F");
-        if(_enableViewHoldTab&&source==0x0020)yield return name+Lang.T(" · 长按记分表 Tab"," · hold-to-scoreboard Tab");
+        if(_enableFastProne&&_map.Crouch==source)yield return name+" · 长按快速趴下 Ctrl";
         if(_enableRun&&source==0x0040)yield return name+Lang.T(" · L3 奔跑切换"," · L3 sprint toggle");
         if(_enableNukeCombo&&(_map.Tactical==source||_map.Lethal==source))yield return name+Lang.T(" · 核弹组合 J"," · nuke combo J");
         if(_cursorSwitchMode==0&&((_comboMask==0?0x00C0:_comboMask)&source)!=0)yield return name+Lang.T(" · 原光标组合 U"," · original cursor combo U");
@@ -68,9 +68,6 @@ public partial class MainForm
         var set=sources.ToHashSet();_padKeyMap.RemoveAll(b=>set.Contains(b.PadBit));if(_keyboardChordsEnabled)_keyboardChords.RemoveAll(c=>set.Contains(c.PadBit));
         if(_experimentalCursorEnabled&&set.Contains(_experimentalCursorKey))_experimentalCursorEnabled=false;
         if(_expRsCombo&&set.Contains(0x0080))_expRsCombo=false;
-        if(_enableFastInteract&&set.Contains(_interactKey))_enableFastInteract=false;
-        if(_enableNukeCombo&&(set.Contains(_map.Tactical)||set.Contains(_map.Lethal)))_enableNukeCombo=false;
-        if(set.Contains(0x0020))_enableViewHoldTab=false;
         if(set.Contains(0x0040))_enableRun=false;
         if(_fireModeEnabled&&(_fireModeUseCombo?set.Any(s=>(_fireModeCombo&s)!=0):set.Contains(_fireModeKey)))_fireModeEnabled=false;
     }
@@ -78,6 +75,8 @@ public partial class MainForm
     {
         if(!SettingsStore.IsValidBind(source))return;
         int old=_map.ActionBinding(index);
+        if(old==source)return;
+        if(!AllowNonHoldMapping(new[]{source,old})){RefreshRemapViews();return;}
         var conflicts=ExistingUses(source,index).Concat(old!=source?OverrideUses(old):Array.Empty<string>());
         if(!await ConfirmMappingChange(MappingPolicy.ActionName(index)+" → "+KeyMap.BitName(source),conflicts)){RefreshRemapViews();return;}
         MappingEdited(()=>{_map.AssignAction(index,source);ClearSourceOverrides(new[]{source,old});});
@@ -87,6 +86,7 @@ public partial class MainForm
     {
         if(_swapShoulderTriggers==enabled)return;
         var sources=new[]{0x0100,0x0200,KeyMap.LT,KeyMap.RT};
+        if(!AllowNonHoldMapping(sources)){RefreshRemapViews();return;}
         string result=string.Join(" · ",Enumerable.Range(4,4).Select(i=>MappingPolicy.ActionName(i)+" → "+KeyMap.BitName(MappingPolicy.SwapSource(_map.ActionBinding(i)))));
         if(!await ConfirmMappingChange(Lang.T(enabled?"开启肩键 / 扳机交换":"关闭肩键 / 扳机交换",enabled?"Enable shoulder / trigger swap":"Disable shoulder / trigger swap")+"\n"+result,sources.SelectMany(OverrideUses))){RefreshRemapViews();return;}
         MappingEdited(()=>{MappingPolicy.SwapActions(_map);_interactKey=MappingPolicy.SwapSource(_interactKey);_swapShoulderTriggers=enabled;ClearSourceOverrides(new[]{0x0100,0x0200,KeyMap.LT,KeyMap.RT});});
@@ -95,6 +95,7 @@ public partial class MainForm
     private async void RestoreActionBindings()
     {
         var defaults=new KeyMap();var sources=Enumerable.Range(0,9).Select(defaults.ActionBinding).ToArray();
+        if(!AllowNonHoldMapping(sources.Concat(Enumerable.Range(0,9).Select(_map.ActionBinding))))return;
         if(!await ConfirmMappingChange(Lang.T("恢复游戏动作默认键位","Restore default game actions"),sources.SelectMany(OverrideUses)))return;
         MappingEdited(()=>{var d=new KeyMap();_map.Jump=d.Jump;_map.Crouch=d.Crouch;_map.Reload=d.Reload;_map.Switch=d.Switch;_map.Aim=d.Aim;_map.Shoot=d.Shoot;_map.Tactical=d.Tactical;_map.Lethal=d.Lethal;_map.MeleePing=d.MeleePing;_swapShoulderTriggers=false;ClearSourceOverrides(Enumerable.Range(0,9).Select(_map.ActionBinding));});
         RefreshRemapViews();
@@ -103,19 +104,22 @@ public partial class MainForm
     {
         var next=bindings.Select(c=>c.Normalize()).Where(c=>c!=null).Select(c=>c!).GroupBy(c=>c.PadBit).Select(g=>g.Last()).ToArray();
         var changed=next.Where(c=>!_keyboardChordsEnabled||!_keyboardChords.Any(old=>old.PadBit==c.PadBit&&old.Name==c.Name));
-        if(enabled&&!await ConfirmMappingChange(Lang.T("应用实验键盘组合：","Apply experimental keyboard chords: ")+string.Join("；",next.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name)),changed.SelectMany(c=>ExistingUses(c.PadBit))))return false;
+        if(enabled&&!AllowNonHoldMapping(next.Select(c=>c.PadBit)))return false;
+        if(enabled&&!await ConfirmMappingChange(Lang.T("应用键盘组合：","Apply keyboard chords: ")+string.Join("；",next.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name)),changed.SelectMany(c=>ExistingUses(c.PadBit))))return false;
         MappingEdited(()=>{if(enabled)ClearSourceOverrides(next.Select(c=>c.PadBit));_keyboardChords.Clear();_keyboardChords.AddRange(next);_keyboardChordsEnabled=enabled;});
         return true;
     }
     private async Task<bool> SetExperimentalCursor(bool enabled,int key)
     {
         if(!SettingsStore.IsValidBind(key))return false;
+        if(enabled&&!AllowNonHoldMapping(new[]{key}))return false;
         if(enabled&&!await ConfirmMappingChange(Lang.T("将 ","Use ")+KeyMap.BitName(key)+Lang.T(" 用于光标切换"," for cursor toggle"),ExistingUses(key)))return false;
-        MappingEdited(()=>{if(enabled)ClearSourceOverrides(new[]{key});_experimentalCursorKey=key;_experimentalCursorEnabled=enabled;});
+        MappingEdited(()=>{if(enabled)ClearSourceOverrides(new[]{key});_experimentalCursorKey=key;_experimentalCursorEnabled=enabled;_legacyCursorTouchpad=false;_cursorSwitchMode=0;});
         return true;
     }
     private Task<bool> ConfirmKeyboardBindings(List<PadKeyBind> candidate)
     {
+        if(!AllowNonHoldMapping(candidate.Select(b=>b.PadBit)))return Task.FromResult(false);
         var changed=candidate.Where(b=>!_padKeyMap.Any(old=>old.PadBit==b.PadBit&&old.KeyName==b.KeyName));
         return ConfirmMappingChange(Lang.T("手柄 → 键盘：","Pad → keyboard: ")+string.Join("；",changed.Select(b=>KeyMap.BitName(b.PadBit)+" → "+b.KeyName)),changed.SelectMany(b=>ExistingUses(b.PadBit)));
     }
@@ -131,6 +135,11 @@ public partial class MainForm
         _keyboardChords.Clear();foreach(var chord in s.KeyboardChords??new()){var resolved=chord?.Normalize();if(resolved!=null&&!_keyboardChords.Any(c=>c.PadBit==resolved.PadBit))_keyboardChords.Add(resolved);}
         _keyboardChordsEnabled=s.EnableKeyboardChords;_experimentalCursorEnabled=s.ExperimentalCursorEnabled;
         _experimentalCursorKey=SettingsStore.IsValidBind(s.ExperimentalCursorKey)?s.ExperimentalCursorKey:0x0040;
+        _legacyCursorTouchpad=s.LegacyCursorTouchpad;
+        // Retain the old Home / Sony touchpad preference within the one cursor
+        // owner. Explicitly choosing a new button ends this compatibility mode.
+        if(s.CursorSwitchMode==1&&!s.ExperimentalCursorEnabled){_experimentalCursorEnabled=true;_experimentalCursorKey=0x0400;_legacyCursorTouchpad=true;}
+        _cursorSwitchMode=0;
         // Legacy malformed configs retain the keyboard owner and never emit a second purpose.
         var keyboardSources=_padKeyMap.Select(b=>b.PadBit).ToHashSet();_keyboardChords.RemoveAll(c=>keyboardSources.Contains(c.PadBit));
         if(_experimentalCursorEnabled&&(keyboardSources.Contains(_experimentalCursorKey)||(_keyboardChordsEnabled&&_keyboardChords.Any(c=>c.PadBit==_experimentalCursorKey))))_experimentalCursorEnabled=false;
@@ -154,13 +163,14 @@ public partial class MainForm
             LogTriggerState(raw);TrackKeyMapInject(raw);
             foreach(var chord in _chordSnapshot){bool down=KeyMap.Hit(chord.Source,raw.wButtons,raw.bLeftTrigger,raw.bRightTrigger);_gameKeys.SetDesired("chord:"+chord.Source+":0",chord.First,down);_gameKeys.SetDesired("chord:"+chord.Source+":1",chord.Second,down);}
             _gameKeys.Pump();
+            TrackButtonAudio(raw);
             var game=WithoutKeyboardBoundInputs(raw);
             foreach(var chord in _chordSnapshot)game=RemoveSource(game,chord.Source);
             if(_shortcutMask!=0)foreach(int source in MappingPolicy.PadSources)if((_shortcutMask&source)!=0)game=RemoveSource(game,source);
             TrackComboPress(game,isDs);
             if(_experimentalCursorEnabled)game=RemoveSource(game,_experimentalCursorKey);
             else if(_cursorSwitchMode==0&&_comboWasDown)game.wButtons=(ushort)(game.wButtons&~_comboMask);
-            TrackDpadLeftDoublePress(_map.UsesSource(4)?RemoveSource(game,4):game);TrackHoldBProne(game);TrackHoldShoulderCombo(game);TrackHoldFastInteract(game);TrackHoldViewTab(_map.UsesSource(0x0020)?RemoveSource(game,0x0020):game);
+            TrackDpadLeftDoublePress(_map.UsesSource(4)?RemoveSource(game,4):game);TrackHoldBProne(game);TrackHoldShoulderCombo(game);TrackHoldFastInteract(game);
             if(isDs)TrackTouchpadTab();TrackLeftStickRun(game);TrackExpRsCombo(game);ForwardToDs4(game);
         }
     }

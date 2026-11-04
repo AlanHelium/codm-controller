@@ -9,7 +9,7 @@ public static class ControllerVisuals
     public static ControllerVisual Disconnected=>new("xbox-generic",Lang.T("未连接手柄","No controller connected"),false);
     public static ControllerVisual? Identify(ControllerDevice device)
     {
-        if(device.Virtual||device.Protected)return null;
+        if(device.Virtual||device.Protected||!device.Gamepad)return null;
         string ids=string.Join(" ",device.Ancestors.Prepend(device.Id));
         string name=device.Name;
         bool Sony(string pid)=>ids.Contains("VID_054C",StringComparison.OrdinalIgnoreCase)&&ids.Contains("PID_"+pid,StringComparison.OrdinalIgnoreCase);
@@ -28,7 +28,7 @@ public static class ControllerVisuals
     }
     public static bool HasPhysicalXInputCandidate(IEnumerable<ControllerDevice> devices)=>devices.Any(d=>!d.Virtual&&!d.Protected&&d.Gamepad&&
         !string.Join(" ",d.Ancestors.Prepend(d.Id)).Contains("VID_054C",StringComparison.OrdinalIgnoreCase));
-    public static ControllerVisual Select(IEnumerable<ControllerDevice> devices,string activePath="",bool xinput=false)
+    public static ControllerVisual Select(IEnumerable<ControllerDevice> devices,string activePath="",bool xinput=false,bool? xinputAvailable=null)
     {
         var physical=devices.Where(d=>!d.Virtual&&!d.Protected).ToArray();
         if(activePath.Length>0)
@@ -37,6 +37,7 @@ public static class ControllerVisuals
             if(selected!=null&&Identify(selected) is {} exact)return exact;
         }
         var distinct=physical.Select(d=>(Device:d,Visual:Identify(d))).Where(x=>x.Visual!=null)
+            .Where(x=>xinputAvailable!=false||!x.Visual!.Asset.StartsWith("xbox",StringComparison.Ordinal))
             .GroupBy(x=>x.Device.Container!=Guid.Empty?x.Device.Container.ToString():x.Device.Id,StringComparer.OrdinalIgnoreCase)
             .Select(g=>g.First().Visual!).ToArray();
         if(distinct.Length==0)return Disconnected;
@@ -53,13 +54,35 @@ public static class ControllerVisuals
 // Discovery opens capability metadata only. It never reads input reports or touches drivers.
 internal sealed class ControllerDiscovery : IDisposable
 {
-    private ControllerDevice[] _devices=Array.Empty<ControllerDevice>();
-    private int _busy,_disposed;
-    public ControllerDevice[] Devices=>Volatile.Read(ref _devices);
+    private sealed record Snapshot(ControllerDevice[] Devices,bool XInputConnected,long CapturedAt);
+    private Snapshot _snapshot=new(Array.Empty<ControllerDevice>(),false,0);
+    private int _busy,_disposed,_requested;
+    public event Action? Changed;
+    public ControllerDevice[] Devices{get{var s=Volatile.Read(ref _snapshot);return s.CapturedAt!=0&&Environment.TickCount64-s.CapturedAt<3500?s.Devices:Array.Empty<ControllerDevice>();}}
+    public bool XInputConnected{get{var s=Volatile.Read(ref _snapshot);return s.CapturedAt!=0&&Environment.TickCount64-s.CapturedAt<3500&&s.XInputConnected;}}
     public void Refresh()
     {
-        if(Volatile.Read(ref _disposed)!=0||Interlocked.Exchange(ref _busy,1)!=0)return;
-        _=Task.Run(()=>{try{var next=DeviceCatalog.Enumerate().ToArray();if(Volatile.Read(ref _disposed)==0)Volatile.Write(ref _devices,next);}catch{/* Preserve the last snapshot on a transient enumeration error. */}finally{Volatile.Write(ref _busy,0);}});
+        if(Volatile.Read(ref _disposed)!=0)return;
+        if(Interlocked.Exchange(ref _busy,1)!=0){Interlocked.Exchange(ref _requested,1);return;}
+        _=Task.Run(()=>
+        {
+            try
+            {
+                var next=DeviceCatalog.Enumerate().ToArray();
+                bool connected=Enumerable.Range(0,4).Any(slot=>XInputNative.XInputGetState(slot,out _)==XInputNative.ERROR_SUCCESS);
+                if(Volatile.Read(ref _disposed)==0)
+                {
+                    var previous=Volatile.Read(ref _snapshot);
+                    Volatile.Write(ref _snapshot,new Snapshot(next,connected,Environment.TickCount64));
+                    static string Key(ControllerDevice d)=>$"{d.Id}|{d.Path}|{d.Container}|{d.UsagePage}|{d.Usage}|{d.Service}";
+                    bool changed=previous.CapturedAt==0||previous.XInputConnected!=connected||
+                        !previous.Devices.Select(Key).Order(StringComparer.OrdinalIgnoreCase).SequenceEqual(next.Select(Key).Order(StringComparer.OrdinalIgnoreCase),StringComparer.OrdinalIgnoreCase);
+                    if(changed)try{Changed?.Invoke();}catch{}
+                }
+            }
+            catch{if(Volatile.Read(ref _disposed)==0)Volatile.Write(ref _snapshot,new Snapshot(Array.Empty<ControllerDevice>(),false,Environment.TickCount64));}
+            finally{Volatile.Write(ref _busy,0);if(Interlocked.Exchange(ref _requested,0)!=0)Refresh();}
+        });
     }
     public void Dispose()=>Interlocked.Exchange(ref _disposed,1);
 }

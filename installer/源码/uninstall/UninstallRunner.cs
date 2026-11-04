@@ -11,13 +11,13 @@ public sealed class UninstallRunner(Action<Update> progress)
         void Log(string text){result.Details.Add(text);progress(new(1,text));}
         try
         {
-            WindowsIntegration.EnsureIdle();var record=InstallRecord.Load(recordPath);recovery=record;
+            WindowsIntegration.EnsureIdle();using var maintenance=WindowsIntegration.AcquireMaintenance();var record=InstallRecord.Load(recordPath);recovery=record;
             progress(new(0,"恢复实体输入并核对安装记录"));
             bool sameBoot=record.UninstallPending&&record.PendingBoot>0&&Math.Abs((decimal)ExitPolicy.Boot-record.PendingBoot)<1000;
             if(sameBoot)Log("上次清理待重启，先复查是否可正常停止无引用组件；不强制卸载内核驱动");
             record.UninstallPending=true;record.PendingBoot=0;record.RemoveDrivers=removeDrivers;record.DeleteData=deleteData;record.Save();
             var hide=Drivers.Inspect("HidHide");
-            bool activeDriver=hide.Filter||(hide.Service&&Drivers.Loaded("HidHide"));
+            bool activeDriver=hide.Service&&Drivers.Loaded("HidHide");
             if(activeDriver&&!HidHideManager.Restore())throw new IOException("实体输入恢复未完成："+HidHideManager.LastError);
             if(activeDriver)
             {

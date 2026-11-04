@@ -78,9 +78,6 @@ public sealed class SettingsForm : Form
     private readonly Action<bool, int, bool, int, int> _onExpChanged2 = (_, _, _, _, _) => { };
 
     // ---- 视图键长按 → Tab（打开记分表）----
-    private readonly bool _viewHoldTab;
-    private readonly int _viewHoldVal;
-    private readonly Action<bool, int> _onViewHoldChanged = (_, _) => { };
 
     public SettingsForm(
         int versionLevel, int sensLevel,
@@ -114,7 +111,7 @@ public sealed class SettingsForm : Form
         Action<bool, int, bool, int, int> onFireModeChanged, int initialSection = -1, Action? onReport = null, Func<string>? movementStatus = null, Func<string>? mappingStatus = null, Action? onCleanup = null,
         bool keyboardChordsEnabled=false,List<PadKeyboardChord>? keyboardChords=null,Func<bool,IEnumerable<PadKeyboardChord>,Task<bool>>? onKeyboardChords=null,
         bool experimentalCursorEnabled=false,int experimentalCursorKey=0x0040,Func<bool,int,Task<bool>>? onExperimentalCursor=null,
-        Func<List<PadKeyBind>,Task<bool>>? confirmKeyboardBindings=null,Action<bool>? captureChanged=null,Func<(bool Enabled,List<PadKeyboardChord> Bindings)>? readKeyboardChords=null,Func<PadShortcut>? readShortcut=null,Func<PadShortcut,Task<bool>>? onShortcut=null,Func<XInputNative.XInputGamepad?>? readPhysical=null)
+        Func<List<PadKeyBind>,Task<bool>>? confirmKeyboardBindings=null,Action<bool>? captureChanged=null,Func<(bool Enabled,List<PadKeyboardChord> Bindings)>? readKeyboardChords=null,Func<PadShortcut>? readShortcut=null,Func<PadShortcut,Task<bool>>? onShortcut=null,Func<XInputNative.XInputGamepad?>? readPhysical=null,Func<HoldOptions>? readHolds=null,Func<string,bool,bool>? onHoldEnabled=null,Func<bool>? readRun=null,Action? onBrandSettings=null,Action? onUpdate=null,Action? onRepair=null)
     {
         _versionLevel = versionLevel;
         _onSensLevel = onSensLevel;
@@ -156,10 +153,7 @@ public sealed class SettingsForm : Form
         _expTouchRadius = expTouchRadius;
         _expTouchSens = expTouchSens;
         _onExpChanged2 = onExpChanged2;
-        _viewHoldTab = viewHoldTab;
-        _viewHoldVal = viewHoldMs;
         _isDsSource = isDsSource;
-        _onViewHoldChanged = onViewHoldChanged;
         _meleeKey = meleeKey;
         _onMeleeRemap = onMeleeRemap;
         _padKeyMap = padKeyMap;
@@ -258,6 +252,21 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
             var deliveryTimer=new System.Windows.Forms.Timer{Interval=150};deliveryTimer.Tick+=(_,_)=>{if(Visible)status.Text=mappingStatus();};
             Shown+=(_,_)=>deliveryTimer.Start();Disposed+=(_,_)=>deliveryTimer.Dispose();
         }
+        if(onKeyboardChords!=null)
+        {
+            var comboCard=UiLayout.Card(keys,Lang.T("单键 → 键盘组合","One button → keyboard chord"),Lang.T("一个实体手柄键同时按下两个键盘键，替代原手柄动作。例如 RT → V + B。","One physical pad button presses two keyboard keys and replaces its original action, e.g. RT → V + B."));
+            bool chordOn=keyboardChordsEnabled;var chordList=(keyboardChords??new()).Select(c=>c.Normalize()!).Where(c=>c!=null).ToList();
+            var description=UiLayout.Text(chordList.Count==0?Lang.T("尚未设置组合","No chords configured"):string.Join("；",chordList.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name)));UiLayout.Add(comboCard,description);
+            UiLayout.Action(comboCard,Lang.T("配置单键组合映射 →","Configure keyboard chords →"),()=>{if(readKeyboardChords!=null){var state=readKeyboardChords();chordOn=state.Enabled;chordList=state.Bindings;}OpenInline(new KeyboardChordForm(chordOn,chordList,async(en,next)=>{bool accepted=await onKeyboardChords(en,next);if(accepted&&!IsDisposed){chordOn=en;chordList=next;description.Text=Lang.T(en?"已启用：":"已停用：",en?"Enabled: ":"Disabled: ")+string.Join("；",next.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name));}return accepted;}),Lang.T("单键组合映射","Keyboard chord mappings"));},true);
+            if(readKeyboardChords!=null){var stateTimer=new System.Windows.Forms.Timer{Interval=200};stateTimer.Tick+=(_,_)=>{if(Visible){var state=readKeyboardChords();description.Text=Lang.T(state.Enabled?"已启用：":"已停用：",state.Enabled?"Enabled: ":"Disabled: ")+string.Join("；",state.Bindings.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name));}};Shown+=(_,_)=>stateTimer.Start();Disposed+=(_,_)=>stateTimer.Dispose();}
+        }
+        if(readShortcut!=null&&onShortcut!=null&&readPhysical!=null&&captureChanged!=null)
+        {
+            var shortcutCard=UiLayout.Card(keys,Lang.T("双键组合 → 键盘单键","Two pad buttons → one keyboard key"),Lang.T("自选两个手柄键和键盘目标，不再固定为 B；也保留单键长按触发方式。","Choose two pad buttons and any supported keyboard target instead of fixed B; single-button hold is also available."));
+            var current=UiLayout.Text(readShortcut().Enabled?readShortcut().Description:Lang.T("未启用","Disabled"));UiLayout.Add(shortcutCard,current);
+            var refresh=new System.Windows.Forms.Timer{Interval=200};refresh.Tick+=(_,_)=>{if(Visible){var s=readShortcut();current.Text=s.Enabled?s.Description:Lang.T("未启用","Disabled");}};Shown+=(_,_)=>refresh.Start();Disposed+=(_,_)=>refresh.Dispose();
+            UiLayout.Action(shortcutCard,Lang.T("配置手柄快捷键 →","Configure pad shortcut →"),()=>OpenInline(new PadShortcutForm(readShortcut(),onShortcut,readPhysical,captureChanged),Lang.T("手柄快捷键","Pad shortcut")),true);
+        }
         }
         if(initialSection<0 || initialSection==2) {
         var movement=_pages[2].Stack;
@@ -273,39 +282,74 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
             Shown+=(_,_)=>liveTimer.Start();FormClosed+=(_,_)=>liveTimer.Dispose();Disposed+=(_,_)=>liveTimer.Dispose();
         }
         var analog=UiLayout.Card(movement,Lang.T("原生摇杆移动","Analog stick movement"),Lang.T("保留全向移动，L3 可切换静步/奔跑。","Keep analog movement; L3 can toggle walk/run."));
-        UiLayout.Check(analog,Lang.T("启用 L3 奔跑切换","Enable L3 walk/run toggle"),_enableRun,v=>_onRunChanged(v,_runThreshold,_autoRun,_gameDefaultRun,_returnWalk),
+        var runCheck=UiLayout.Check(analog,Lang.T("启用 L3 奔跑切换","Enable L3 walk/run toggle"),_enableRun,_=>{},
             Lang.T("使用该方案时，请关闭上方 WASD 移动；游戏内奔跑设为点击切换。","Disable WASD above for this scheme; set in-game sprint to tap-to-toggle."));
+        bool runSync=false;runCheck.CheckedChanged+=(_,_)=>{if(runSync)return;_onRunChanged(runCheck.Checked,_runThreshold,_autoRun,_gameDefaultRun,_returnWalk);if(readRun!=null&&runCheck.Checked!=readRun()){runSync=true;runCheck.Checked=readRun();runSync=false;}};
+
 
         }
         if(initialSection<0 || initialSection==3) {
         var assist=_pages[3].Stack;
         var cursor=UiLayout.Card(assist,Lang.T("光标辅助","Cursor helpers"));
         UiLayout.Check(cursor,Lang.T("左摇杆推开中央光标","Move cursor away with left stick"),_nudgeCursor,_onNudgeChanged,Lang.T("避免重生后的光标遮挡视野。","Keep the cursor out of view after respawning."));
-        UiLayout.Check(cursor,Lang.T("单键切换光标模式","Single-button cursor toggle"),_cursorSwitchMode==1,_onCursorModeChanged,
-            Lang.T("Xbox：有线 Home 键；DS：触摸板。关闭后使用自定义组合键。","Xbox: wired Home button; DS: touchpad. When off, use the configured combo."));
+        if(onExperimentalCursor!=null)
+        {
+            UiLayout.Add(cursor,UiLayout.Text(Lang.T("自选一个实体键切换光标，并移至游戏客户区左上角。关闭时使用原组合键。","Choose a physical button to toggle the cursor and move it to the game's top-left corner. When disabled, use the original combo.")));
+            bool cursorOn=experimentalCursorEnabled;int cursorKey=experimentalCursorKey;var picker=KeyboardChordForm.PadPicker(cursorKey);UiLayout.Add(cursor,UiLayout.Text(Lang.T("切光标触发键","Cursor trigger button")));UiLayout.Add(cursor,picker);
+            var check=UiLayout.Check(cursor,Lang.T("启用自选单键切光标","Enable configurable single-button cursor toggle"),cursorOn,_=>{});bool sync=false;
+            async Task ApplyCursor(){if(sync)return;sync=true;bool desired=check.Checked;int key=MappingPolicy.PadSources[picker.SelectedIndex];check.Enabled=picker.Enabled=false;try{bool accepted=await onExperimentalCursor(desired,key);if(IsDisposed)return;if(accepted){cursorOn=desired;cursorKey=key;}else{check.Checked=cursorOn;picker.SelectedIndex=Array.IndexOf(MappingPolicy.PadSources,cursorKey);}}finally{sync=false;if(!IsDisposed)check.Enabled=picker.Enabled=true;}}
+            check.CheckedChanged+=async(_,_)=>await ApplyCursor();picker.SelectedIndexChanged+=async(_,_)=>await ApplyCursor();
+            UiLayout.Add(cursor,UiLayout.Text(Lang.T("Home / Logo 通过扩展 XInput 或原始 HID 读取，需手柄固件上报。若按键打开 Xbox Game Bar，请检查 Windows 的手柄快捷键设置。旧版 Sony 触摸板设置会保留，重新选择后使用指定单键。","Home / Logo requires firmware reporting via extended XInput or HID. If it opens Xbox Game Bar, check its controller shortcut settings. Legacy Sony touchpad preferences are retained until a new button is selected.")));
+        }
         var hold=UiLayout.Card(assist,Lang.T("长按与快捷交互","Hold actions"));
-        bool proneOn=fastProne;
-        var prone=UiLayout.Check(hold,Lang.T("长按 B 快速趴下","Hold B for fast prone"),proneOn,v=>{proneOn=v;_onProne(v,proneVal);});
-        UiLayout.Slider(hold,Lang.T("趴下长按时间","Prone hold duration"),proneVal,100,1000,v=>v+" ms",v=>{proneVal=v;_onProne(proneOn,v);});
-        UiLayout.Slider(hold,Lang.T("快速交互长按时间","Interact hold duration"),interactVal,100,1000,v=>v+" ms",v=>{interactVal=v;_onInteractHoldChanged(v);},Lang.T("开关及触发键在“键位 → 游戏动作”中设置。","Enable and choose its button under Keys → Game actions."));
-        bool viewOn=_viewHoldTab; int viewMs=_viewHoldVal;
-        UiLayout.Check(hold,Lang.T("长按视图键打开记分表","Hold View for scoreboard"),viewOn,v=>{viewOn=v;_onViewHoldChanged(v,viewMs);});
-        UiLayout.Slider(hold,Lang.T("记分表长按时间","Scoreboard hold duration"),viewMs,100,1000,v=>v+" ms",v=>{viewMs=v;_onViewHoldChanged(viewOn,v);});
-        UiLayout.Slider(hold,Lang.T("核弹组合长按时间","Nuke combo hold duration"),nukeVal,200,1200,v=>v+" ms",v=>{nukeVal=v;_onNukeHoldChanged(v);},Lang.T("组合开关在“键位 → 游戏动作”中设置。","Enable the combo under Keys → Game actions."));
+        UiLayout.Add(hold,UiLayout.Text("勾选后占用对应按键；设置其他映射前，请先取消勾选。短按仍保留游戏原生动作。"));
+        var initialHold=readHolds?.Invoke()??new HoldOptions(fastProne,0x2000,fastInteract,0x4000,false,0x0100,0x0200);
+        var holdChecks=new List<(string Kind,CheckBox Check,StudioSlider Slider)>();
+        void AddHold(string kind,bool enabled,int ms,int min,int max,string duration,Action<int> change)
+        {
+            bool syncing=false;
+            var check=UiLayout.Check(hold,"",enabled,_=>{});
+            var slider=UiLayout.Slider(hold,duration,ms,min,max,v=>v+" ms",change);slider.Enabled=enabled;
+            check.CheckedChanged+=(_,_)=>{
+                if(syncing)return;
+                bool desired=check.Checked;
+                bool accepted=onHoldEnabled?.Invoke(kind,desired)??true;
+                if(!accepted){syncing=true;check.Checked=!desired;syncing=false;}
+                slider.Enabled=check.Checked;
+            };
+            holdChecks.Add((kind,check,slider));
+        }
+        AddHold("prone",initialHold.Prone,proneVal,100,1000,"趴下长按时间",v=>{proneVal=v;_onProne(readHolds?.Invoke().Prone??initialHold.Prone,v);});
+        AddHold("interact",initialHold.Interact,interactVal,100,1000,"快速交互长按时间",v=>{interactVal=v;_onInteractHoldChanged(v);});
+        AddHold("nuke",initialHold.Nuke,nukeVal,200,1200,"核弹组合长按时间",v=>{nukeVal=v;_onNukeHoldChanged(v);});
+        void RefreshHolds()
+        {
+            var state=readHolds?.Invoke()??initialHold;
+            holdChecks[0].Check.Text="长按 "+KeyMap.BitName(state.ProneSource)+" 快速趴下 → Ctrl";
+            holdChecks[1].Check.Text="长按 "+KeyMap.BitName(state.InteractSource)+" 快速交互 → F";
+            holdChecks[2].Check.Text="长按 "+KeyMap.BitName(state.TacticalSource)+" + "+KeyMap.BitName(state.LethalSource)+" 核弹组合 → J";
+        }
+        RefreshHolds();
+        var holdTimer=new System.Windows.Forms.Timer{Interval=250};holdTimer.Tick+=(_,_)=>{if(Visible)RefreshHolds();};Shown+=(_,_)=>holdTimer.Start();Disposed+=(_,_)=>holdTimer.Dispose();
+        UiLayout.Add(hold,UiLayout.Text("快速交互默认 X → F。需要更改触发键时，先关闭快速交互，再到「键位映射 → 游戏动作键位」重设。"));
 
         }
         if(initialSection<0 || initialSection==4) {
         var feedback=_pages[4].Stack;
-        var feedbackCard=UiLayout.Card(feedback,Lang.T("震动与语音","Rumble & voice"),Lang.T("震动、语音和自定义播报全部免费开放。","Rumble, voice and custom prompts are all free."));
+        var feedbackCard=UiLayout.Card(feedback,Lang.T("震动与音频提示","Rumble & voice"),Lang.T("触发所选手柄按键时播放音频提示；支持自定义语音与音量。","Rumble, voice and custom prompts are all free."));
         if(_versionLevel>=2) {
             UiLayout.Action(feedbackCard,Lang.T("设置震动反馈 →","Configure rumble →"),onRumble,true);
-            UiLayout.Action(feedbackCard,Lang.T("设置语音播报 →","Configure voice →"),onVoice);
+            UiLayout.Action(feedbackCard,Lang.T("设置按键音频提示 →","Configure button audio →"),onVoice);
         } else UiLayout.Add(feedbackCard,UiLayout.Text(Lang.T("手感和键位调节已开放；语音与震动需要 Pro。","Feel and key settings are open; voice and rumble require Pro.")));
         UiLayout.Action(feedbackCard,_versionLevel>=2?Lang.T("查看授权与支持作者 →","License & support →"):Lang.T("了解 Pro 与支持作者 →","About Pro & support →"),onUnlock);
 
         }
         if(initialSection<0 || initialSection==5) {
         var tools=_pages[5].Stack;
+        var about=UiLayout.Card(tools,Lang.T("关于软件","About"));
+        UiLayout.Add(about,UiLayout.Text("v" + typeof(SettingsForm).Assembly.GetName().Version?.ToString(3),true));
+        UiLayout.Add(about,UiLayout.Text(Lang.T("普通正式版","Standard Edition")));
+        if(onUpdate!=null)UiLayout.Action(about,Lang.T("检查更新 →","Check for updates →"),onUpdate);
         var tests=UiLayout.Card(tools,Lang.T("测试与诊断","Tests & diagnostics"));
         UiLayout.Action(tests,Lang.T("按键与摇杆测试 →","Buttons & sticks test →"),onTestKeys);
         UiLayout.Action(tests,Lang.T("测试记录 →","Test log →"),onTestLog);
@@ -318,6 +362,7 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
         UiLayout.Action(config,Lang.T("使用引导 →","Setup guide →"),onGuide);
         UiLayout.Action(config,Lang.T("更新日志 →","Release notes →"),()=>OpenInline(new ChangelogForm(),Lang.T("更新日志","Release notes")));
         var advanced=UiLayout.Card(tools,Lang.T("维护与重置","Maintenance & reset"));
+        if(onRepair!=null){UiLayout.Action(advanced,Lang.T("修复连接组件 →","Repair connection components →"),onRepair,true);UiLayout.Add(advanced,UiLayout.Text(Lang.T("打开修复工具时会正常退出转换器并保留配置；先退出游戏及模拟器。","Opening repair exits the converter normally and keeps settings. Exit the game and emulator first.")));}
         if(onCleanup!=null)UiLayout.Action(advanced,Lang.T("打开清理 / 卸载工具…","Open cleanup / uninstall tool…"),onCleanup);
         UiLayout.Add(advanced,UiLayout.Text(Lang.T("关闭主窗口只退出软件。点击清理工具会退出转换器并打开清理界面，由你选择范围和重启时间。","Closing the main window only exits the app. Opening cleanup exits the converter; you choose the cleanup scope and restart time.")));
         UiLayout.Action(advanced,Lang.T("恢复默认设置…","Restore defaults…"),()=>onReset());
@@ -325,28 +370,9 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
         }
         if(initialSection<0 || initialSection==6) {
         var experiments=_pages[6].Stack;
-        if(onKeyboardChords!=null)
-        {
-            var comboCard=UiLayout.Card(experiments,Lang.T("单键 → 键盘组合 · 实验","One button → keyboard chord · experimental"),Lang.T("一个实体手柄键同时按下两个键盘键，替代原手柄动作。例如 RT → V + B。","One physical pad button presses two keyboard keys and replaces its original action, e.g. RT → V + B."));
-            bool chordOn=keyboardChordsEnabled;var chordList=(keyboardChords??new()).Select(c=>c.Normalize()!).Where(c=>c!=null).ToList();
-            var description=UiLayout.Text(chordList.Count==0?Lang.T("尚未设置组合","No chords configured"):string.Join("；",chordList.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name)));UiLayout.Add(comboCard,description);
-            UiLayout.Action(comboCard,Lang.T("配置实验组合映射 →","Configure experimental chords →"),()=>{if(readKeyboardChords!=null){var state=readKeyboardChords();chordOn=state.Enabled;chordList=state.Bindings;}OpenInline(new KeyboardChordForm(chordOn,chordList,async(en,next)=>{bool accepted=await onKeyboardChords(en,next);if(accepted&&!IsDisposed){chordOn=en;chordList=next;description.Text=Lang.T(en?"已启用：":"已停用：",en?"Enabled: ":"Disabled: ")+string.Join("；",next.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name));}return accepted;}),Lang.T("实验组合映射","Experimental chord mappings"));},true);
-            if(readKeyboardChords!=null){var stateTimer=new System.Windows.Forms.Timer{Interval=200};stateTimer.Tick+=(_,_)=>{if(Visible){var state=readKeyboardChords();description.Text=Lang.T(state.Enabled?"已启用：":"已停用：",state.Enabled?"Enabled: ":"Disabled: ")+string.Join("；",state.Bindings.Select(c=>KeyMap.BitName(c.PadBit)+" → "+c.Name));}};Shown+=(_,_)=>stateTimer.Start();Disposed+=(_,_)=>stateTimer.Dispose();}
-        }
-        if(readShortcut!=null&&onShortcut!=null&&readPhysical!=null&&captureChanged!=null)
-        {
-            var shortcutCard=UiLayout.Card(experiments,Lang.T("双键组合 → 键盘单键 · 实验","Two pad buttons → one keyboard key · experimental"),Lang.T("自选两个手柄键和键盘目标，不再固定为 B；也保留单键长按触发方式。","Choose two pad buttons and any supported keyboard target instead of fixed B; single-button hold is also available."));
-            var current=UiLayout.Text(readShortcut().Enabled?readShortcut().Description:Lang.T("未启用","Disabled"));UiLayout.Add(shortcutCard,current);
-            var refresh=new System.Windows.Forms.Timer{Interval=200};refresh.Tick+=(_,_)=>{if(Visible){var s=readShortcut();current.Text=s.Enabled?s.Description:Lang.T("未启用","Disabled");}};Shown+=(_,_)=>refresh.Start();Disposed+=(_,_)=>refresh.Dispose();
-            UiLayout.Action(shortcutCard,Lang.T("配置手柄快捷键 →","Configure pad shortcut →"),()=>OpenInline(new PadShortcutForm(readShortcut(),onShortcut,readPhysical,captureChanged),Lang.T("手柄快捷键","Pad shortcut")),true);
-        }
-        if(onExperimentalCursor!=null)
-        {
-            var cursorCard=UiLayout.Card(experiments,Lang.T("单键切光标并移到左上角 · 实验","Single-button cursor toggle & corner move · experimental"),Lang.T("发送 U 切换光标，随后移至游戏窗口左上角。启用后替代原组合触发及此键原有动作。","Send U to toggle the cursor, then move it to the game's top-left corner. Replaces the old combo trigger and this button's original action."));
-            bool cursorOn=experimentalCursorEnabled;int cursorKey=experimentalCursorKey;var picker=KeyboardChordForm.PadPicker(cursorKey);UiLayout.Add(cursorCard,UiLayout.Text(Lang.T("实体触发键","Physical trigger button")));UiLayout.Add(cursorCard,picker);
-            var check=UiLayout.Check(cursorCard,Lang.T("启用单键切光标","Enable single-button cursor toggle"),cursorOn,_=>{});bool sync=false;
-            async Task ApplyCursor(){if(sync)return;sync=true;bool desired=check.Checked;int key=MappingPolicy.PadSources[picker.SelectedIndex];check.Enabled=picker.Enabled=false;try{bool accepted=await onExperimentalCursor(desired,key);if(IsDisposed)return;if(accepted){cursorOn=desired;cursorKey=key;}else{check.Checked=cursorOn;picker.SelectedIndex=Array.IndexOf(MappingPolicy.PadSources,cursorKey);}}finally{sync=false;if(!IsDisposed)check.Enabled=picker.Enabled=true;}}
-            check.CheckedChanged+=async(_,_)=>await ApplyCursor();picker.SelectedIndexChanged+=async(_,_)=>await ApplyCursor();
+        if(onBrandSettings!=null) {
+            var brand=UiLayout.Card(experiments,Lang.T("品牌展示","Brand presentation"),Lang.T("设置任意手柄接入演示、型号配色、光效与连接卡片。","Configure plug-in demos, model colors, lighting and connection cards."));
+            UiLayout.Action(brand,Lang.T("品牌展示设置 →","Brand presentation settings →"),onBrandSettings);
         }
         int gyroSensitivity=_gyroSens,gyroDzValue=_gyroDz,gyroSmValue=_gyroSm; bool gyroOn=_gyroEnabled,invX=_gyroInvX,invY=_gyroInvY;
         void SendGyro()=>_onGyroChanged(gyroOn,gyroSensitivity,gyroDzValue,gyroSmValue,invX,invY);
@@ -394,7 +420,7 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
     private string[] SectionNames => new[] {
         Lang.T("手感与灵敏度","Feel & sensitivity"),Lang.T("键位设置","Key settings"),
         Lang.T("移动与奔跑","Move & sprint"),Lang.T("光标与交互","Cursor & holds"),
-        Lang.T("震动与语音","Rumble & voice"),Lang.T("工具与配置","Tools & config"),
+        Lang.T("震动与音频提示","Rumble & voice"),Lang.T("工具与配置","Tools & config"),
         Lang.T("实验性功能","Experimental")
     };
     public void SelectSection(int idx)
@@ -406,7 +432,7 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
         }
         _pages[idx].Page.BringToFront(); _pages[idx].Page.AutoScrollPosition=Point.Empty;
         _sectionTitle.Text=SectionNames[idx];
-        _sectionHint.Text=Lang.T("设置 / ","Settings / ")+SectionNames[idx];
+        _sectionHint.Text=Lang.T("设置 / ","Settings / ")+SectionNames[idx]+" · v"+typeof(SettingsForm).Assembly.GetName().Version?.ToString(3);
         UiLayout.FitText(_pages[idx].Stack);
     }
     private void RefreshSensHighlight(int idx)

@@ -1,4 +1,4 @@
-﻿namespace CODMControllerProbe;
+namespace CODMControllerProbe;
 
 public sealed class SupportForm:Form
 {

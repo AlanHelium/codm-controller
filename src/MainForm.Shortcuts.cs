@@ -18,6 +18,7 @@ public partial class MainForm
     private async Task<bool> SetPadShortcut(PadShortcut next)
     {
         if(next.Enabled&&!next.Valid)return false;
+        if(next.Enabled&&!AllowNonHoldMapping(next.Sources))return false;
         var previous=ReadPadShortcut();
         bool purposeChanged=next.Enabled&&(!previous.Enabled||previous.Mask!=next.Mask||previous.Target!=next.Target||previous.UseCombo!=next.UseCombo);
         if(purposeChanged&&!await ConfirmMappingChange(Lang.T("手柄快捷键：","Pad shortcut: ")+next.Description+"\n"+Lang.T("启用后这些手柄键专用于此快捷键，单独按也不再触发原动作。","These pad buttons are reserved for this shortcut, including individual presses."),next.Sources.SelectMany(s=>ExistingUses(s))))return false;

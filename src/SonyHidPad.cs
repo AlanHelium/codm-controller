@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32.SafeHandles;
+using Microsoft.Win32.SafeHandles;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 namespace CODMControllerProbe;

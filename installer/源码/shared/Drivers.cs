@@ -1,15 +1,15 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System.Text.RegularExpressions;
 using System.Runtime.InteropServices;
 
 namespace Burrito.Installer;
 
 public sealed record Driver(string Name,string File,string Hash);
-public sealed record DriverState(string Name,bool Service,bool Enabled,bool SysFile,bool Filter,List<string> Products,List<string> InfPackages)
+public sealed record DriverState(string Name,bool Service,bool Enabled,bool SysFile,bool Filter,List<string> Products,List<string> InfPackages,bool DeviceReady=true,int DeviceNodes=0)
 {
-    public bool Ready=>Service&&Enabled&&SysFile&&(Name!="HidHide"||Filter);
-    public bool HasResidue=>Service||SysFile||Filter||Products.Count>0||InfPackages.Count>0;
-    public string Summary=>$"服务{(Service?"在":"无")} / 文件{(SysFile?"在":"无")} / 过滤器{(Filter?"在":"无")} / 安装项{Products.Count} / 驱动包{InfPackages.Count}";
+    public bool Ready=>Service&&Enabled&&SysFile&&(Name!="HidHide"||Filter)&&DeviceReady;
+    public bool HasResidue=>Service||SysFile||Filter||Products.Count>0||InfPackages.Count>0||DeviceNodes>0;
+    public string Summary=>$"服务{(Service?"在":"无")} / 文件{(SysFile?"在":"无")} / 过滤器{(Filter?"在":"无")} / 系统设备{(DeviceReady?"运行中":"未运行")}（节点{DeviceNodes}） / 安装项{Products.Count} / 驱动包{InfPackages.Count}";
 }
 public sealed class DriverOutcome
 {
@@ -41,7 +41,9 @@ public static class Drivers
         var infs=new List<string>();string folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"INF");
         foreach(string file in Directory.EnumerateFiles(folder,"oem*.inf"))
         {string content=File.ReadAllText(file);if(IsTargetInf(content,driver))infs.Add(Path.GetFileName(file));}
-        return new(driver,service!=null,enabled,File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"drivers",driver+".sys")),filter,products.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),infs);
+        var devices=CODMControllerProbe.DriverDevices.Enumerate(driver);
+        bool deviceReady=CODMControllerProbe.DriverDevices.Inspect(driver).Started;
+        return new(driver,service!=null,enabled,File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"drivers",driver+".sys")),filter,products.Distinct(StringComparer.OrdinalIgnoreCase).ToList(),infs,deviceReady,devices.Count);
     }
     private static void VerifyVendor(string path,Driver d)
     {
@@ -87,8 +89,12 @@ public static class Drivers
         string file=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"drivers",state.Name+".sys");SafeFiles.NoLinks(file);
         if(state.SysFile) {
             using var stream=File.OpenRead(file);string hash=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
-            // The SHA256 is the WHQL-signed HidHide 1.4.181 driver retained by the pinned official package.
-            if(state.Name!="HidHide"||hash!="E3BB8B6A4E4FF90290B34E710EDBEF88CF71CEC6BA0CADCB8E1685D5DD65DDB2")return false;
+            // Exact driver binaries observed after installing the hash-pinned,
+            // signed vendor packages. Other versions need official repair first.
+            string expected=state.Name switch{
+                "HidHide"=>"E3BB8B6A4E4FF90290B34E710EDBEF88CF71CEC6BA0CADCB8E1685D5DD65DDB2",
+                "ViGEmBus"=>"B6D6FA5CA8334368FC366A3E78552EFB74EEF657061371B2DE407AA158B0A11C",_=>""};
+            if(hash!=expected)return false;
         }
         log(state.Name+" 已无官方安装项、驱动包、过滤器及设备引用，正常清理核验过的孤立组件");
         if(state.Service) {
@@ -114,7 +120,7 @@ public static class Drivers
             } finally{CloseServiceHandle(manager);}
         }
         if(Loaded(state.Name)||HasReference(state.Name)){result.Reboot=true;log("组件仍被 Windows 引用，保留文件等待复查");return true;}
-        if(File.Exists(file))try{File.Delete(file);}catch(UnauthorizedAccessException){int code=await OrphanFileCleanup.Remove(log);result.Reboot|=ExitPolicy.Reboot(code);if(!ExitPolicy.Success(code))throw new IOException("Windows Installer 孤立文件清理未完成："+code);}
+        if(File.Exists(file))try{File.Delete(file);}catch(UnauthorizedAccessException){int code=await OrphanFileCleanup.Remove(log,state.Name);result.Reboot|=ExitPolicy.Reboot(code);if(!ExitPolicy.Success(code))throw new IOException("Windows Installer 孤立文件清理未完成："+code);}
         log(state.Name+" 已停止，核验过的孤立驱动文件已移除");return true;
     }
     public static bool Loaded(string name)
@@ -138,7 +144,7 @@ public static class Drivers
         foreach(var d in Packages)
         {
             if(RemovalPending(d.Name)){result.Reboot=true;log(d.Name+" 上次移除仍待重启，请重启后再安装");break;}
-            var before=Inspect(d.Name);if(before.Ready){log(d.Name+" 已就绪，复用已有组件");result.States.Add(before);continue;}
+            var before=Inspect(d.Name);if(before.Ready){log(d.Name+" 已安装，复用已有组件；稍后检查能否调用");result.States.Add(before);continue;}
             string vendor=SafeFiles.Child(root,"components/"+d.File);VerifyVendor(vendor,d);
             string logfile=Path.Combine(root,d.Name+"-install.log");log("正在安装或修复 "+d.Name);
             int code;
@@ -148,10 +154,51 @@ public static class Drivers
                 code=await WindowsIntegration.Run(vendor,["/exenoui","/qn","/norestart","REBOOT=ReallySuppress","/L*v",logfile],log);
             result.Reboot|=ExitPolicy.Reboot(code);
             if(!ExitPolicy.Success(code)){result.Success=false;result.Problems.Add(d.Name+" 安装未完成（"+code+"）");break;}
-            var after=Inspect(d.Name);result.States.Add(after);log(d.Name+"："+after.Summary);
+            var after=await WaitReady(d.Name);
+            if(!after.Ready&&!result.Reboot&&before.Products.Count>0)
+            {
+                // A repair may restore MSI registration without recreating a
+                // missing root device. Reinstall only this official component.
+                log(d.Name+" 常规修复后仍缺少可用系统设备，重新安装此组件");
+                foreach(string product in after.Products)
+                {
+                    int removed=await WindowsIntegration.Run(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"msiexec.exe"),["/x",product,"/qn","/norestart","REBOOT=ReallySuppress"],log);
+                    result.Reboot|=ExitPolicy.Reboot(removed);
+                    if(!ExitPolicy.Success(removed)&&removed!=1605){result.Success=false;result.Problems.Add(d.Name+" 重新安装前清理未完成（"+removed+"）");break;}
+                }
+                if(result.Success&&!result.Reboot&&!RemovalPending(d.Name))
+                {
+                    int installed=await WindowsIntegration.Run(vendor,["/exenoui","/qn","/norestart","REBOOT=ReallySuppress","/L*v",logfile],log);
+                    result.Reboot|=ExitPolicy.Reboot(installed);
+                    if(!ExitPolicy.Success(installed)){result.Success=false;result.Problems.Add(d.Name+" 重新安装未完成（"+installed+"）");}
+                    after=await WaitReady(d.Name);
+                }
+                else if(RemovalPending(d.Name))result.Reboot=true;
+            }
+            result.States.Add(after);log(d.Name+"："+after.Summary);
             if(!after.Ready&&!result.Reboot){result.Success=false;result.Problems.Add(d.Name+" 未通过组件就绪检查");break;}
+            if(!result.Success||result.Reboot)break;
         }
         return result;
+    }
+    static async Task<DriverState> WaitReady(string name)
+    {
+        long deadline=Environment.TickCount64+8000;var state=Inspect(name);
+        while(!state.Ready&&!RemovalPending(name)&&Environment.TickCount64<deadline){await Task.Delay(400);state=Inspect(name);}
+        return state;
+    }
+    static async Task RemoveRemainingNodes(string name,DriverOutcome result,Action<string> log)
+    {
+        foreach(var device in CODMControllerProbe.DriverDevices.Enumerate(name))
+        {
+            // Match again immediately before removal; never delete root nodes
+            // based only on a display name or broad vendor substring.
+            if(!CODMControllerProbe.DriverDevices.Enumerate(name).Any(d=>d.InstanceId.Equals(device.InstanceId,StringComparison.OrdinalIgnoreCase)))continue;
+            log(name+" 清理残留系统设备："+device.InstanceId);
+            int code=await WindowsIntegration.Run(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"pnputil.exe"),["/remove-device",device.InstanceId],log);
+            result.Reboot|=ExitPolicy.Reboot(code);
+            if(!ExitPolicy.Success(code))log(name+" 设备移除返回码 "+code+"，将按实际剩余状态复查");
+        }
     }
     public static async Task<DriverOutcome> Remove(string root,Action<string> log)
     {
@@ -160,7 +207,7 @@ public static class Drivers
         foreach(var d in Packages.Reverse())
         {
             var state=Inspect(d.Name);if(!state.HasResidue){log(d.Name+" 未检测到残留");result.States.Add(state);continue;}
-            if(await CleanOrphan(state,result,log)) {
+            if(state.DeviceNodes==0&&await CleanOrphan(state,result,log)) {
                 var verified=Inspect(d.Name);result.States.Add(verified);log(d.Name+" 孤立组件复查："+verified.Summary);
                 if(verified.HasResidue&&!result.Reboot){result.Success=false;result.Problems.Add(d.Name+" 孤立组件尚有残留");}continue;
             }
@@ -183,6 +230,8 @@ public static class Drivers
                 if(!ExitPolicy.Success(code)&&code!=1605){result.Success=false;result.Problems.Add(d.Name+" 官方卸载失败（"+code+"）");}
             }
             var after=Inspect(d.Name);
+            if(after.Products.Count==0&&!after.Filter)
+            {await RemoveRemainingNodes(d.Name,result,log);after=Inspect(d.Name);}
             if(!after.Filter&&after.Products.Count==0)
             {
                 foreach(string inf in after.InfPackages)

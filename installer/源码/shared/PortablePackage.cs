@@ -20,13 +20,14 @@ public static class PortablePackage
     {
         var outcome=new Outcome();
         try {
-            WindowsIntegration.EnsureIdle();var record=InstallRecord.Load(Path.Combine(root,Product.RecordName));if(!record.Portable)throw new IOException("这不是免安装包");
+            WindowsIntegration.EnsureIdle();using var maintenance=WindowsIntegration.AcquireMaintenance();var record=InstallRecord.Load(Path.Combine(root,Product.RecordName));if(!record.Portable)throw new IOException("这不是免安装包");
             if(record.UninstallPending)throw new IOException("这个目录仍待完成清理，请先完成清理后重新解压");
             void Log(string text){outcome.Details.Add(text);progress(new(1,text));}
             var drivers=await Drivers.Install(record.Root,Log);outcome.Success=drivers.Success;outcome.RestartRequired=drivers.Reboot;outcome.Details.AddRange(drivers.Problems);
             record.ComponentRestartRequired=drivers.Reboot||(record.ComponentRestartRequired&&CODMControllerProbe.ComponentProbe.SameBoot(record.ComponentPreparedBoot,CODMControllerProbe.ComponentProbe.BootStamp));record.ComponentPreparedBoot=CODMControllerProbe.ComponentProbe.BootStamp;record.Save();
             progress(new(1,"检查组件接口，等待 Windows 初始化"));var readiness=await CODMControllerProbe.ComponentProbe.WaitAsync(root);outcome.RestartRequired|=readiness.NeedsRestart;outcome.ReadyToLaunch=drivers.Success&&readiness.Ready;outcome.Details.Add(readiness.Message);
-            outcome.Summary=!drivers.Success?"组件尚未就绪，请查看详细记录":outcome.RestartRequired?"组件已安装，Windows 需要重启完成更新；可稍后重启":outcome.ReadyToLaunch?"免安装组件接口已就绪，可以开始使用":"组件已安装，接口尚未就绪；请重新检查或重插手柄";
+            outcome.Details.AddRange(readiness.Details);outcome.FilesInstalled=true;
+            outcome.Summary=!drivers.Success?"驱动准备未完成，请查看具体记录":outcome.RestartRequired?"组件已安装，Windows 尚有更新待完成，可稍后重启":outcome.ReadyToLaunch?"组件准备完成，可以开始使用":"驱动已安装；"+string.Join("、",new[]{readiness.Vigem,readiness.HidHide}.Where(s=>!s.RuntimeReady).Select(s=>s.Name))+" 暂时无法调用，请查看具体记录";
         }catch(Exception ex){outcome.Summary="组件准备未完成："+ex.Message;outcome.Details.Add(ex.Message);}
         return outcome;
     }

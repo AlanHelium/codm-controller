@@ -17,7 +17,7 @@ public sealed record StartupDiagnosticData(ComponentReadiness Components,bool Ph
             if(state.RestartPending)return new(name,HealthLevel.Waiting,Lang.T("已安装 · 等待重启完成","Installed · restart pending"));
             if(!state.Installed)return new(name,HealthLevel.Error,Lang.T("未安装","Not installed"),Lang.T("请运行安装包或准备组件工具。","Run Setup or Prepare components."));
             if(!state.Configured)return new(name,HealthLevel.Error,Lang.T("安装配置不完整","Installation configuration is incomplete"),Lang.T("请使用组件准备工具修复。","Repair with Prepare components."));
-            if(!state.RuntimeReady)return new(name,HealthLevel.Waiting,Lang.T("已安装 · 接口尚未就绪","Installed · interface not ready"),state.Error);
+            if(!state.RuntimeReady)return new(name,HealthLevel.Waiting,Lang.T("已安装 · 暂时无法调用","Installed · currently unavailable"),state.Error);
             return new(name,HealthLevel.Ready,Lang.T("已安装 · 接口可用","Installed · interface available"));
         }
         var hid=Driver(Components.HidHide,Lang.T("HidHide 实体输入隔离组件","HidHide isolation component"));

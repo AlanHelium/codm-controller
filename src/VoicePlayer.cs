@@ -150,8 +150,8 @@ public static class VoicePlayer
 
     // 当前 NAudio 播放对象（保持存活到播放结束）
     private static WaveOutEvent? _curOut;
-    private static AudioFileReader? _curReader;
-    private static string? _curTempFile;
+
+
 
     public static void Play(int mode)
     {
@@ -177,43 +177,53 @@ public static class VoicePlayer
 
     public static void PlayClip(VoiceClip clip)
     {
+        WaveOutEvent? output = null;
+        AudioFileReader? reader = null;
+        string? temp = null;
+        int released = 0;
+        void Release()
+        {
+            if (Interlocked.Exchange(ref released, 1) != 0) return;
+            lock (PlayLock)
+            {
+                // A delayed stop callback belongs to this clip only. It must
+                // never dispose the next clip or delete its temporary file.
+                if (ReferenceEquals(_curOut, output))
+                { _curOut = null; }
+                try { output?.Dispose(); } catch { }
+                try { reader?.Dispose(); } catch { }
+                if (temp != null) { try { File.Delete(temp); } catch { } }
+            }
+        }
         try
         {
-            string? path;
-            if (clip.File.StartsWith("builtin:"))
+            lock (PlayLock)
             {
-                // 内置资源：提取到临时文件播放（播放完删除）
-                var asm = typeof(VoicePlayer).Assembly;
-                using var rs = asm.GetManifestResourceStream(clip.File["builtin:".Length..]);
-                if (rs == null) return;
-                _curTempFile = Path.Combine(Path.GetTempPath(), "codmvoice_" + Guid.NewGuid().ToString("N") + ".wav");
-                using (var fs = File.Create(_curTempFile)) rs.CopyTo(fs);
-                path = _curTempFile;
+                string path;
+                if (clip.File.StartsWith("builtin:"))
+                {
+                    var asm = typeof(VoicePlayer).Assembly;
+                    using var resource = asm.GetManifestResourceStream(clip.File["builtin:".Length..]);
+                    if (resource == null) return;
+                    temp = Path.Combine(Path.GetTempPath(), "codmvoice_" + Guid.NewGuid().ToString("N") + ".wav");
+                    using (var file = File.Create(temp)) resource.CopyTo(file);
+                    path = temp;
+                }
+                else
+                {
+                    path = Path.Combine(VoiceStore.Dir_, clip.File);
+                    if (!File.Exists(path)) return;
+                }
+                reader = new AudioFileReader(path);
+                output = new WaveOutEvent { Volume = Math.Clamp(VoiceStore.Lib.HumanVolume, 0f, 1f) };
+                output.PlaybackStopped += (_, _) => Release();
+                output.Init(reader);
+                try { _curOut?.Stop(); } catch { }
+                _curOut = output;
+                output.Play();
             }
-            else
-            {
-                path = Path.Combine(VoiceStore.Dir_, clip.File);
-                if (!File.Exists(path)) return;
-            }
-
-            StopCurrent();
-            _curReader = new AudioFileReader(path);
-            _curOut = new WaveOutEvent { Volume = Math.Clamp(VoiceStore.Lib.HumanVolume, 0f, 1f) };
-            _curOut.PlaybackStopped += (_, _) =>
-            {
-                _curOut?.Dispose(); _curOut = null;
-                _curReader?.Dispose(); _curReader = null;
-                if (_curTempFile != null) { try { File.Delete(_curTempFile); } catch { } _curTempFile = null; }
-            };
-            _curOut.Init(_curReader);
-            _curOut.Play();
         }
-        catch { /* 音频异常静默 */ }
-    }
-
-    private static void StopCurrent()
-    {
-        try { _curOut?.Stop(); } catch { }
+        catch { Release(); }
     }
 
     // ---- TTS ----
@@ -250,7 +260,7 @@ public static class VoicePlayer
                 }
                 dynamic v = _ttsVoice;
                 v.Volume = Math.Clamp((int)(VoiceStore.Lib.TtsVolume * 100f), 0, 100);
-                v.Speak(line, 1); // 1 = SVSFlagsAsync：异步播报不阻塞
+                v.Speak(line, 3); // Async + purge: rapid presses replace the previous prompt instead of queuing speech.
             }
         }
         catch { /* TTS 不可用时静默 */ }

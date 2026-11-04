@@ -16,6 +16,8 @@ public class RemapForm : Form
     private readonly Func<bool>? _readSwap;
     private readonly Func<bool>? _readInteract;
     private bool _syncBindings;
+    private readonly Func<int>? _readInteractKey;
+    private readonly Func<ushort>? _readCombo;
     public KeyMap Map;
 
     private readonly List<(string action, Label keyLbl, Button btn)> _rows = new();
@@ -41,8 +43,8 @@ public class RemapForm : Form
     private ushort _combo;
     private Label _comboKeyLbl = null!;
     private Label _meleeKeyLbl = null!;
-    private CheckBox _nukeChk = null!;
-    private CheckBox _interactChk = null!;
+    private Label _nukeChk = null!;
+    private Label _interactChk = null!;
     private CheckBox _swapChk = null!;
 
     public RemapForm(KeyMap map, Action onChange, ushort comboMask = 0x00C0, Action<ushort>? onComboChange = null,
@@ -51,8 +53,9 @@ public class RemapForm : Form
                      int interactKey = 0x4000, Action<int>? onInteractKeyChange = null,
                      bool swapEnabled = false, Action<bool>? onSwapChange = null,
                      int meleeKey = 0x0080, Action<int>? onMeleeKeyChange = null,
-                     bool autoCaptureMelee = false, Action<int,int>? assignAction=null,Action? restoreActions=null,Func<XInputNative.XInputGamepad?>? readPhysical=null,Action<bool>? captureChanged=null,Func<int,string>? sourceStatus=null,Func<bool>? readSwap=null,Func<bool>? readInteract=null)
+                     bool autoCaptureMelee = false, Action<int,int>? assignAction=null,Action? restoreActions=null,Func<XInputNative.XInputGamepad?>? readPhysical=null,Action<bool>? captureChanged=null,Func<int,string>? sourceStatus=null,Func<bool>? readSwap=null,Func<bool>? readInteract=null,Func<int>? readInteractKey=null,Func<ushort>? readCombo=null)
     {
+        _readInteractKey=readInteractKey;_readCombo=readCombo;
         _assignAction=assignAction;_restoreActions=restoreActions;_readPhysical=readPhysical;_captureChanged=captureChanged;_sourceStatus=sourceStatus;_readSwap=readSwap;_readInteract=readInteract;
         Map = map;
         _onChange = onChange;
@@ -141,32 +144,29 @@ public class RemapForm : Form
         // 第 10 行：核弹连杀组合键（长按 LB+RB → J，注入方式同 U 键直投；开启肩键/扳机交换后由物理 LT+RT 长按触发）。开关可勾选，组合固定。
         tbl.RowStyles.Add(new RowStyle(SizeType.Absolute, Dpi.Px(40)));
         var nukeName = new Label { Text = Lang.T("核弹连杀", "Nuke Streak"), TextAlign = ContentAlignment.MiddleLeft, Font = Assets.Ui(10.5F, FontStyle.Bold) };
-        _nukeChk = new StudioCheckBox
+        _nukeChk = new Label
         {
             Text = Lang.T("长按 LB+RB 触发（键盘 J）", "Hold LB+RB (keyboard J)"),
-            Checked = _nukeEnabled,
             AutoSize = true,
             Location = new Point(Dpi.Px(4), Dpi.Px(8)),
             ForeColor = Color.FromArgb(55, 65, 81),
             Font = Assets.Ui(9.5F),
         };
-        _nukeChk.CheckedChanged += (_, _) => _onNukeChange(_nukeChk.Checked);
+        _nukeChk.Text="开关与时长：光标与交互 → 长按与快捷交互";
         tbl.Controls.Add(nukeName, 0, 9);
         tbl.Controls.Add(_nukeChk, 1, 9);
 
         // 第 11 行：快速交互（长按触发键 → F，同快速趴下规格）。开关 + 触发键录制（触发键名动态显示在勾选文本上）。
         tbl.RowStyles.Add(new RowStyle(SizeType.Absolute, Dpi.Px(40)));
         var interactName = new Label { Text = Lang.T("快速交互", "Fast Interact"), TextAlign = ContentAlignment.MiddleLeft, Font = Assets.Ui(10.5F, FontStyle.Bold) };
-        _interactChk = new StudioCheckBox
+        _interactChk = new Label
         {
             Text = Lang.T("长按 " + KeyMap.BitName(_interactKey) + " 触发 F（交互键）", "Hold " + KeyMap.BitName(_interactKey) + " to press F (interact)"),
-            Checked = _interactEnabled,
             AutoSize = true,
             Location = new Point(Dpi.Px(4), Dpi.Px(8)),
             ForeColor = Color.FromArgb(55, 65, 81),
             Font = Assets.Ui(9.5F),
         };
-        _interactChk.CheckedChanged += (_, _) => {if(!_syncBindings)_onInteractEnableChange(_interactChk.Checked);};
         var interactBtn = new StudioButton { Text = Lang.T("重设", "Set"), Size = new Size(Dpi.Px(70), Dpi.Px(28)), Tag = 9, FlatStyle = FlatStyle.Flat };
         Assets.StyleOutline(interactBtn, 6);
         tbl.Controls.Add(interactName, 0, 10);
@@ -224,12 +224,10 @@ public class RemapForm : Form
             Map.Tactical = 0x0100; Map.Lethal = 0x0200;
             _combo = 0x00C0;
             _interactKey = 0x4000;
-            if (!_nukeChk.Checked) { _nukeChk.Checked = true; _onNukeChange(true); }
-            if (_interactChk.Checked) { _interactChk.Checked = false; _onInteractEnableChange(false); }
             _meleeKey = 0x0080;
             _onMeleeKeyChange(_meleeKey);
             RefreshRows();
-            _interactChk.Text = Lang.T("长按 " + KeyMap.BitName(_interactKey) + " 触发 F（交互键）", "Hold " + KeyMap.BitName(_interactKey) + " to press F (interact)");
+            _interactChk.Text = "长按 "+KeyMap.BitName(_interactKey)+" → F · 开关在长按与快捷交互";
             _hint.Text = Lang.T("已恢复默认：A=跳跃 B=下蹲 X=换弹 Y=切枪；瞄准=LT 射击=RT；战术=LB 杀伤=RB；切换光标 = L3+R3；快速交互触发键 = X。", "Restored defaults: A=Jump B=Crouch X=Reload Y=Switch; Aim=LT Shoot=RT; Tactical=LB Lethal=RB; Cursor toggle = L3+R3; Fast interact trigger = X.");
             _onChange(); // 恢复默认也立即保存
             _onComboChange(_combo);
@@ -454,11 +452,13 @@ public class RemapForm : Form
     private void RefreshRows()
     {
         _meleeKey=Map.MeleePing;
+        if(_readInteractKey!=null)_interactKey=_readInteractKey();
+        if(_readCombo!=null)_combo=_readCombo();
         var bits = new[] { Map.Jump, Map.Crouch, Map.Reload, Map.Switch, Map.Aim, Map.Shoot, Map.Tactical, Map.Lethal };
         for (int i = 0; i < 8; i++)
             _rows[i].keyLbl.Text = Lang.T("实体键：", "Physical: ") + KeyMap.BitName(bits[i]) + (string.IsNullOrEmpty(_sourceStatus?.Invoke(bits[i]))?"":" · "+_sourceStatus!(bits[i]));
         _comboKeyLbl.Text = Lang.T("组合：", "Combo: ") + ComboName(_combo);
-        _interactChk.Text = Lang.T("长按 " + KeyMap.BitName(_interactKey) + " 触发 F（交互键）", "Hold " + KeyMap.BitName(_interactKey) + " to press F (interact)");
+        _interactChk.Text = "长按 "+KeyMap.BitName(_interactKey)+" → F · 开关在长按与快捷交互";
         _meleeKeyLbl.Text = Lang.T("实体键：", "Physical: ") + KeyMap.BitName(_meleeKey)+(string.IsNullOrEmpty(_sourceStatus?.Invoke(_meleeKey))?"":" · "+_sourceStatus!(_meleeKey));
     }
 
@@ -491,5 +491,5 @@ public class RemapForm : Form
         if(disposing){_captureChanged?.Invoke(false);_timer?.Stop();_timer?.Dispose();}
         base.Dispose(disposing);
     }
-    public void RefreshBindings(){RefreshRows();_syncBindings=true;try{if(_readSwap!=null)_swapChk.Checked=_readSwap();if(_readInteract!=null)_interactChk.Checked=_readInteract();}finally{_syncBindings=false;}_hint.Text=Lang.T("显示当前实体键及接管用途。重新绑定时会先列出冲突。","Showing current physical buttons and overrides. Conflicts are listed before rebinding.");}
+    public void RefreshBindings(){RefreshRows();_syncBindings=true;try{if(_readSwap!=null)_swapChk.Checked=_readSwap();}finally{_syncBindings=false;}_hint.Text=Lang.T("显示当前实体键及接管用途。重新绑定时会先列出冲突。","Showing current physical buttons and overrides. Conflicts are listed before rebinding.");}
 }

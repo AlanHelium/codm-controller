@@ -74,11 +74,7 @@ public partial class MainForm : Form
     private int _holdProneDelayMs = 150;            // 快速趴下长按阈值（独立可调）
     private int _nukeHoldMs = 400;                  // 核弹连杀长按阈值（独立可调，防误触）
     private int _interactHoldMs = 150;              // 快速交互长按阈值（独立可调）
-    private bool _enableViewHoldTab = true;          // 视图键长按 → Tab（打开记分表），默认开
     private bool _touchpadTab = true;                 // 触摸板按下 → Tab（DS4/DS5/DSE 专用），默认开
-    private int _viewHoldMs = 200;                   // 视图键长按阈值（独立可调，防误触）
-    private bool _viewWasDown, _viewHeld;
-    private int _viewDownTick, _viewRepeatTick;
     private bool _touchpadWasDown, _touchpadHeld;
     private int _touchpadRepeatTick;
     private const ushort KEY_TAB_VK = 0x09;          // Tab
@@ -236,7 +232,7 @@ public partial class MainForm : Form
 
         // 布局按窗口实际 DPI 等比缩放（多显示器/虚拟屏下字体与控件同步放大，永不错位）。
         Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
-        Text = Lang.T("CODM 手柄转换", "CODM Controller Bridge");
+        Text = EditionTitle;
         // 窗口尺寸同样随 DPI 等比放大（否则控件放大了、窗口不放大，高 DPI 下内容溢出/遮挡）
         ClientSize = new Size(Math.Min(Dpi.Px(1120),Screen.FromControl(this).WorkingArea.Width-Dpi.Px(40)), Math.Min(Dpi.Px(800),Screen.FromControl(this).WorkingArea.Height-Dpi.Px(80)));
         MinimumSize = new Size(Dpi.Px(900), Dpi.Px(640));
@@ -320,14 +316,13 @@ public partial class MainForm : Form
             _map.Lethal = s.MapLethal;
             _comboMask = (ushort)(s.ComboMask == 0 ? 0x00C0 : s.ComboMask);
             _cursorSwitchMode = s.CursorSwitchMode is 0 or 1 ? s.CursorSwitchMode : 0;
+            LoadButtonAudio(s);
             _voiceMode = s.VoiceMode is >= VoicePlayer.Off and <= VoicePlayer.Human
                 ? s.VoiceMode
                 : VoicePlayer.Tts;
             _holdProneDelayMs = s.HoldProneDelayMs is >= 100 and <= 1000 ? s.HoldProneDelayMs : 150;
             _nukeHoldMs = s.NukeHoldMs is >= 200 and <= 1200 ? s.NukeHoldMs : 400;
             _interactHoldMs = s.InteractHoldMs is >= 100 and <= 1000 ? s.InteractHoldMs : 150;
-            _enableViewHoldTab = s.EnableViewHoldTab;
-            _viewHoldMs = s.ViewHoldMs is >= 100 and <= 1000 ? s.ViewHoldMs : 200;
             _enableFastProne = s.EnableFastProne;
             _enableNukeCombo = s.EnableNukeCombo;
             _swapShoulderTriggers = s.SwapShoulderTriggers;
@@ -383,6 +378,7 @@ public partial class MainForm : Form
             _fireModeCombo = s.FireModeCombo;
             _fireModeTarget=KeyboardKeys.ByName(s.FireModeKeyboardKey)?.Name??"B";
             ResolveShortcutOwnership();
+            NormalizeLegacyHoldOwnership();
             _fireModeWasDown = _fireModeSent = false;
             _outputHz = s.OutputHz is >= 60 and <= 1000 ? s.OutputHz : 1000;
             _freeSensLevel = s.FreeSensLevel is >= 0 and <= 19 ? s.FreeSensLevel : 9;
@@ -395,7 +391,7 @@ public partial class MainForm : Form
             _fineTuneGains = s.FineTuneGains is { Length: 6 } ? s.FineTuneGains : new[] { 1f, 1f, 1f, 1f, 1f, 1f };
             ApplyVersionedCurves(s); // 按版本档位重建曲线（免费/高级=出厂×档位，Pro=自定义）
             // 会话起点留痕：下次测试日志第一行即可确认运行版本与关键开关，避免"旧进程没退干净/跑错版本"争议。
-            TestLog.Add($"会话启动: 版本=v3.4.7 交换肩键扳机={_swapShoulderTriggers} WASD移动={_expWasdMove} 映射区绑定={_padKeyMap.Count} 条");
+            TestLog.Add($"会话启动: 版本=v3.5.15 交换肩键扳机={_swapShoulderTriggers} WASD移动={_expWasdMove} 映射区绑定={_padKeyMap.Count} 条");
         }
         catch { /* 设置加载失败使用出厂默认 */ }
     }
@@ -423,11 +419,10 @@ public partial class MainForm : Form
         _comboMask = (ushort)(d.ComboMask == 0 ? 0x00C0 : d.ComboMask);
         _cursorSwitchMode = d.CursorSwitchMode is 0 or 1 ? d.CursorSwitchMode : 0;
         _voiceMode = d.VoiceMode;
+        LoadButtonAudio(d);
         _holdProneDelayMs = d.HoldProneDelayMs;
         _nukeHoldMs = d.NukeHoldMs;
         _interactHoldMs = d.InteractHoldMs;
-        _enableViewHoldTab = d.EnableViewHoldTab;
-        _viewHoldMs = d.ViewHoldMs;
         _enableFastProne = d.EnableFastProne;
         _enableNukeCombo = d.EnableNukeCombo;
         _swapShoulderTriggers = d.SwapShoulderTriggers;
@@ -462,7 +457,7 @@ public partial class MainForm : Form
         _fineTuneGains = d.FineTuneGains;
         ReplaceKeyboardBindings(Array.Empty<PadKeyBind>());
         _expRsCombo = false;
-        _keyboardChords.Clear();_keyboardChordsEnabled=false;_experimentalCursorEnabled=false;PublishMappingSnapshots();
+        _keyboardChords.Clear();_keyboardChordsEnabled=false;_experimentalCursorEnabled=false;_legacyCursorTouchpad=false;_cursorSwitchMode=0;PublishMappingSnapshots();
         _fireModeEnabled = false;
         _fireModeHoldMs = 250;
         _fireModeUseCombo = true;
@@ -620,6 +615,7 @@ public partial class MainForm : Form
             KeyboardChords = _keyboardChords.Select(c=>c.Normalize()!).ToList(),
             ExperimentalCursorEnabled = _experimentalCursorEnabled,
             ExperimentalCursorKey = _experimentalCursorKey,
+            LegacyCursorTouchpad = _legacyCursorTouchpad,
             MapJump = _map.Jump,
             MapCrouch = _map.Crouch,
             MapReload = _map.Reload,
@@ -631,14 +627,16 @@ public partial class MainForm : Form
             ComboMask = _comboMask,
             CursorSwitchMode = _cursorSwitchMode,
             VoiceMode = _voiceMode,
+            AudioCursorToggle = _audioCursorToggle,
+            AudioTriggerButtons = _audioTriggerButtons.ToList(),
             ProUnlocked = _versionLevel >= 2,
             VersionLevel = _versionLevel,
             FineTuneGains = _fineTuneGains,
             HoldProneDelayMs = _holdProneDelayMs,
             NukeHoldMs = _nukeHoldMs,
             InteractHoldMs = _interactHoldMs,
-            EnableViewHoldTab = _enableViewHoldTab,
-            ViewHoldMs = _viewHoldMs,
+            EnableViewHoldTab = false,
+            ViewHoldMs = 200,
             EnableFastProne = _enableFastProne,
             EnableNukeCombo = _enableNukeCombo,
             SwapShoulderTriggers = _swapShoulderTriggers,
@@ -749,7 +747,7 @@ public partial class MainForm : Form
         ClipCircle(picLogo); // 圆形头像剪裁
         _lblTitle = new Label
         {
-            Text = Lang.T("CODM 手柄转换", "CODM Controller Bridge"),
+            Text = EditionTitle,
             Location = new Point(Dpi.Px(124), Dpi.Px(14)), Size = new Size(Dpi.Px(360), Dpi.Px(32)),
             Font = Assets.Ui(20F, FontStyle.Bold),
             ForeColor = Color.FromArgb(0xEA, 0xF1, 0xFC),   // 主标题：蓝白（取自深蓝背景的高光层）
@@ -1005,7 +1003,7 @@ public partial class MainForm : Form
 
         btnVoice = new StudioButton
         {
-            Text = Lang.T("语音设置", "Voice"),
+            Text = Lang.T("按键音频提示", "Button audio"),
             Location = new Point(Dpi.Px(428), Dpi.Px(330)), Size = new Size(Dpi.Px(188), Dpi.Px(36)),
             Font = Assets.Ui(10F),
             FlatStyle = FlatStyle.Flat,
@@ -1218,8 +1216,8 @@ public partial class MainForm : Form
     private void ApplyLang()
     {
         if (_lblTitle == null) return; // 布局尚未构建
-        Text = Lang.T("CODM 手柄转换", "CODM Controller Bridge");
-        _lblTitle.Text = Lang.T("CODM 手柄转换", "CODM Controller Bridge");
+        Text = EditionTitle;
+        _lblTitle.Text = EditionTitle;
         _lblSub.Text = "PAD/BRIDGE · GAMEPAD TOOL";   // 品牌副标固定不翻译
         btnLang.Text = Lang.SwitchLabel;
         btnVersion.Text = VersionName(_versionLevel);
@@ -1227,7 +1225,7 @@ public partial class MainForm : Form
         btnFineTune.Text = Lang.T("完整调校", "Full Tuning");
         btnToggle.Text = _running ? Lang.T("停止转换", "Stop") : Lang.T("启动转换", "Start");
         btnRemap.Text = Lang.T("键位修正", "Key Remap");
-        btnVoice.Text = Lang.T("语音设置", "Voice");
+        btnVoice.Text = Lang.T("按键音频提示", "Button audio");
         btnTest.Text = Lang.T("按键测试", "Test Keys");
         btnSop.Text = Lang.T("LT/RT 带转向", "LT/RT steer?");
         btnReset.Text = Lang.T("恢复默认", "Reset");
@@ -1713,21 +1711,17 @@ public partial class MainForm : Form
     /// 否则翻转当前模式。核心动作 = 向游戏投递一次 U 键（切光标）+
     /// 延迟移开光标（等游戏异步切出完成）+ 可选语音播报。
     /// </summary>
-    private void ToggleInputMode(bool forceNative = false)
+    private void ToggleInputMode(bool forceNative = false, bool audioForPress = false)
     {
-        _nativeInput = forceNative || !_nativeInput;
         uint sent = SendVirtualKey(SWITCH_KEY_VK, SWITCH_KEY_SCAN, "U", out string target);
+        if(sent!=2){SetStatus(Lang.T("光标切换未完成：","Cursor request not delivered: ")+target,Color.FromArgb(217,119,6));return;}
+        _nativeInput = forceNative || !_nativeInput;
         // 无论切到哪个模式，都把光标移开：组合键/按钮的意图就是"确保锁定在手柄模式"，
         // 且游戏有时切出光标后系统对 On/Off 感知不准，统一移光标最省心。
         _cursorMoveTimer.Stop();
         _cursorMoveTimer.Start();
-        // 语音播报：
-        // Pro 版 = 完整语音库（自定义 TTS / 真人语音 / 音量）；
-        // 免费版/高级版 = 固定 TTS "Let's Go"，仅可开/关，不可自定义
-        if (_versionLevel >= 2)
-            VoicePlayer.Play(_voiceMode);
-        else if (_voiceMode != VoicePlayer.Off)
-            VoicePlayer.SpeakLine("Let's go");
+        if (_audioCursorToggle && !audioForPress && IsGameKeyTargetForeground(_gameKeys.CurrentTarget)
+            && Environment.TickCount64 - _lastButtonAudioAt > 150) VoicePlayer.Play(_voiceMode);
         lblMode.Text = _nativeInput
             ? Lang.T("输入模式：手柄原生（辅助瞄准大）", "Input: Pad native (strong aim assist)")
             : Lang.T("输入模式：键鼠（辅助瞄准小）", "Input: K&M (light aim assist)");
@@ -1808,11 +1802,7 @@ public partial class MainForm : Form
         bool comboDown;
         if (_experimentalCursorEnabled)
         {
-            comboDown=KeyMap.Hit(_experimentalCursorKey,g.wButtons,g.bLeftTrigger,g.bRightTrigger);
-        }
-        else if (_cursorSwitchMode == 1)
-        {
-            comboDown = isDs ? SonyHidPad.TouchpadPressed : (g.wButtons & 0x0400) != 0;
+            comboDown=_legacyCursorTouchpad&&isDs?SonyHidPad.TouchpadPressed:KeyMap.Hit(_experimentalCursorKey,g.wButtons,g.bLeftTrigger,g.bRightTrigger);
         }
         else
         {
@@ -1825,7 +1815,8 @@ public partial class MainForm : Form
             // 组合键在后台注入线程被检测到；ToggleInputMode 内部会操作 UI Timer（移开光标）与
             // lblMode/RefreshSummary 等控件，必须调度到 UI 线程执行，否则跨线程调用静默失败（光标不移开）。
             int revision=_mappingRevision;
-            Action trigger=()=>{if(_running&&!_mappingCaptureActive&&!_mappingConflictActive&&revision==_mappingRevision&&IsGameForeground())ToggleInputMode(forceNative:!_experimentalCursorEnabled);};
+            bool audioForPress=_buttonAudioThisFrame;
+            Action trigger=()=>{if(_running&&!_mappingCaptureActive&&!_mappingConflictActive&&revision==_mappingRevision&&IsGameForeground())ToggleInputMode(forceNative:!_experimentalCursorEnabled,audioForPress:audioForPress);};
             if (InvokeRequired) BeginInvoke(trigger);
             else trigger();
         }
@@ -1833,20 +1824,8 @@ public partial class MainForm : Form
     }
 
     /// <summary>
-    /// 事件语音播报：语音开启（_voiceMode != Off）时用 TTS 播报固定英文文案。
-    /// 检视 / 核弹这类语义明确的事件不走随机语音池（随机词与事件无关），
-    /// 统一用固定 TTS 文案，与切换输入模式时的 "Let's go" 口径一致。
-    /// </summary>
-    private void AnnounceEvent(string line)
-    {
-        if (_voiceMode != VoicePlayer.Off)
-            VoicePlayer.SpeakLine(line);
-    }
-
-    /// <summary>
     /// 双击方向键左 → 注入一次 I 键（方式同 U：PostMessage 直投，无后续动作，不切光标）。
     /// 用于把游戏自定义按键（如背包/信息）绑到手柄上，双击是为了与单次 DPadLeft 方向输入区分。
-    /// 触发成功时播报语音（检视）。
     /// </summary>
     private void TrackDpadLeftDoublePress(XInputNative.XInputGamepad g)
     {
@@ -1858,7 +1837,7 @@ public partial class MainForm : Form
             {
                 SendVirtualKey(KEY_I_VK, KEY_I_SCAN, "I", out _);
                 SetStatus("双击方向键左 → 已发送 I 键", Color.FromArgb(5, 150, 105));
-                AnnounceEvent("Inspect");
+
             }
             _lastDpadLeftPressTick = now;
         }
@@ -1919,7 +1898,7 @@ public partial class MainForm : Form
     /// <summary>
     /// 长按触发键 → 注入 F（交互键）。同快速趴下规格：短按保持原生行为，
     /// 按住超阈值直投 F 按下（松开时抬起），长按期间暂停触发键的原生 DS4 转发
-    /// （避免游戏同时收到该键与 F 的双重指令）。触发键默认 LB，可在键位修正中录制。
+    /// （避免游戏同时收到该键与 F 的双重指令）。触发键默认 X，可在键位修正中录制。
     /// </summary>
     private void TrackHoldFastInteract(XInputNative.XInputGamepad g)
     {
@@ -1950,57 +1929,14 @@ public partial class MainForm : Form
     }
 
     /// <summary>
-    /// 长按视图键（View）→ 注入 Tab（打开记分表）。同 U/J/H 键的已验证注入通道（PostMessage 直投）：
-    /// 按住超阈值先投一次 Tab 按下，之后按住期间每 80ms 重发一次按下（兼容"消息驱动 + 轮询"两种
-    /// 引擎的记分板检测），松开时投 Tab 抬起；长按期间暂停 View 的原生 Share 转发（避免双重指令）。
-    /// </summary>
-    private void TrackHoldViewTab(XInputNative.XInputGamepad g)
-    {
-        if (!_enableViewHoldTab) { _viewWasDown = false; _viewHeld = false; return; }
-        bool down = (g.wButtons & 0x0020) != 0; // View（Share）
-        if (down && !_viewWasDown)
-        {
-            _viewDownTick = Environment.TickCount;
-            _viewRepeatTick = 0;
-            _viewHeld = false;
-        }
-        else if (down && _viewWasDown && !_viewHeld)
-        {
-            if (Environment.TickCount - _viewDownTick >= _viewHoldMs)
-            {
-                SendNamedKeyState("view-tab",KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: true, out _);
-                _viewHeld = true;
-                _viewRepeatTick = Environment.TickCount;
-                SetStatus("长按视图键 → 已发送 Tab（记分表）", Color.FromArgb(5, 150, 105));
-            }
-        }
-        else if (down && _viewWasDown && _viewHeld)
-        {
-            // 按住保持：每 80ms 重发一次 Tab 按下，保证游戏持续检测到按键（记分板按住显示）
-            if (Environment.TickCount - _viewRepeatTick >= 80)
-            {
-                SendNamedKeyState("view-tab",KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: true, out _);
-                _viewRepeatTick = Environment.TickCount;
-            }
-        }
-        else if (!down && _viewWasDown && _viewHeld)
-        {
-            SendNamedKeyState("view-tab",KEY_TAB_VK, KEY_TAB_SCAN, "Tab", down: false, out _);
-            _viewHeld = false;
-            SetStatus("视图键松开 → 已抬起 Tab", Color.FromArgb(107, 114, 128));
-        }
-        _viewWasDown = down;
-    }
-
-    /// <summary>
     /// 触摸板按下 → 注入 Tab（打开记分表）。DS 系列专属（DS4 / DS5 / DSE，标准布局 report[33] bit5）。
     /// 复用视图键 Tab 的已验证注入通道：按下即投 Tab 按下，按住期间每 80ms 重发一次按下，
     /// 松开时投 Tab 抬起。触摸板是独立按键，不与任何原生按钮冲突。
     /// </summary>
     private void TrackTouchpadTab()
     {
-        // 单键切光标开启时触摸板让位给切光标（DS 系一键切光标默认键），记分表 Tab 请用视图键长按
-        if (_cursorSwitchMode == 1 || !_touchpadTab || !SonyHidPad.IsOpen) { _touchpadWasDown = false; _touchpadHeld = false; return; }
+        // 单键切光标开启时触摸板让位给切光标（DS 系一键切光标默认键），原生 View 不受影响
+        if ((_experimentalCursorEnabled&&_legacyCursorTouchpad) || !_touchpadTab || !SonyHidPad.IsOpen) { _touchpadWasDown = false; _touchpadHeld = false; return; }
         bool down = SonyHidPad.TouchpadPressed;
         if (down && !_touchpadWasDown)
         {
@@ -2139,7 +2075,6 @@ public partial class MainForm : Form
     /// 两肩键同时按住超阈值（默认 400ms）触发一次 J，触发后到全部松开期间屏蔽 LB/RB 的
     /// DS4 转发（避免游戏同时收到 L1/R1 与 J 的双重指令），下次同按重新判定。
     /// 勾选关闭核弹连杀时本功能整体停用，LB/RB 全程走原生转发。
-    /// 触发成功时播报语音（核弹）。
     /// </summary>
     private void TrackHoldShoulderCombo(XInputNative.XInputGamepad g)
     {
@@ -2170,7 +2105,7 @@ public partial class MainForm : Form
                 _shoulderComboSent = true;
                 _shoulderComboActive = true;   // 触发后到松开：屏蔽 LB/RB 转发
                 SetStatus("长按 LB+RB → 已发送 J（核弹连杀）", Color.FromArgb(5, 150, 105));
-                AnnounceEvent("Nuke ready");
+
             }
         }
         else if (!down)
@@ -2339,7 +2274,7 @@ public partial class MainForm : Form
             StopConversion();
             MessageBox.Show(this,
                 Lang.T("转换启动失败，请打开设备检测查看实际组件状态。\n\n", "Conversion failed to start; check actual component status in diagnostics.\n\n") + ex.Message,
-                Lang.T("CODM 手柄转换", "CODM Controller Bridge"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                EditionTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -2463,7 +2398,7 @@ public partial class MainForm : Form
             + " 瞄准=" + KeyMap.BitName(_map.Aim) + " 射击=" + KeyMap.BitName(_map.Shoot)
             + " 战术=" + KeyMap.BitName(_map.Tactical) + " 杀伤=" + KeyMap.BitName(_map.Lethal)
             + " 近战/标点=" + KeyMap.BitName(_map.MeleePing));
-        Line($"  长按阈值：趴下={_holdProneDelayMs}ms 交互={_interactHoldMs}ms 核弹={_nukeHoldMs}ms 视图Tab={_viewHoldMs}ms");
+        Line($"  长按阈值：趴下={_holdProneDelayMs}ms 交互={_interactHoldMs}ms 核弹={_nukeHoldMs}ms");
         Line("");
 
         // ---- 4. 实时原始状态 ----
@@ -2510,6 +2445,7 @@ public partial class MainForm : Form
     private void PauseOutput()
     {
         _wasdShiftHold.Release();
+        ResetButtonAudio();
         if (_outputPaused) return;
         _outputPaused = true;
         try{_ds4?.ResetReport();_ds4?.SubmitReport();}catch{} // Neutralize a held frame without disconnecting the virtual device.
@@ -2528,10 +2464,10 @@ public partial class MainForm : Form
         _lastAimOut = _lastShootOut = _lastTacticalOut = _lastLethalOut = false;
         if (_ctrlHeld) SendKeyState(KEY_LCONTROL_VK, KEY_LCONTROL_SCAN, "Ctrl", false, out _);
         if (_interactHeld) SendKeyState(KEY_F_VK, KEY_F_SCAN, "F", false, out _);
-        if (_viewHeld || _touchpadHeld) SendKeyState(KEY_TAB_VK, KEY_TAB_SCAN, "Tab", false, out _);
-        _ctrlHeld = _interactHeld = _viewHeld = _touchpadHeld = false;
-        _comboWasDown = _viewWasDown = _touchpadWasDown = _interactWasDown = false;
-        _bDownTick = _interactDownTick = _viewDownTick = 0;
+        if (_touchpadHeld) SendKeyState(KEY_TAB_VK, KEY_TAB_SCAN, "Tab", false, out _);
+        _ctrlHeld = _interactHeld = _touchpadHeld = false;
+        _comboWasDown = _touchpadWasDown = _interactWasDown = false;
+        _bDownTick = _interactDownTick = 0;
         _shouldersWasDown = _shoulderComboActive = _shoulderComboSent = false;
         _sourceName = "";
         ResetExpMoveKeys();
@@ -2657,7 +2593,8 @@ public partial class MainForm : Form
             $"L3{K(b.HasFlag(XInputNative.GamepadButtons.LeftThumb))}" +
             $"R3{K(b.HasFlag(XInputNative.GamepadButtons.RightThumb))} " +
             $"D{dpad} St{K(b.HasFlag(XInputNative.GamepadButtons.Start))}" +
-            $"Ba{K(b.HasFlag(XInputNative.GamepadButtons.Back))}";
+            $"Ba{K(b.HasFlag(XInputNative.GamepadButtons.Back))} " +
+            $"Home{K(b.HasFlag(XInputNative.GamepadButtons.Guide))}";
 
         string raw2 =
             Lang.T("轴", "Axes") + $": LT {g.bLeftTrigger,3} RT {g.bRightTrigger,3} | " +
@@ -2866,7 +2803,6 @@ public partial class MainForm : Form
         // 快速交互长按已触发（注入 F）期间，暂停触发键的原生转发，避免游戏收到双重指令（同快速趴下规格）。
         bool SuppressedByInteract(int source) => _interactHeld && source==_interactKey;
         // 原生动作依唯一绑定输出，额外长按动作按来源抑制，而非按按钮外观。
-        bool ViewSuppresses(DualShock4Button btn) => _viewHeld && btn == DualShock4Button.Share;
         // 按键映射区：映射键当前按下（键盘键已注入）→ 该键的原生 DS4 位暂停转发（动作跟着键位走，不双触发）
         // 实验 R3 组合（V+B）按住期间：R3 原生位暂停转发
         int PhysicalSource(int source)=>source;
@@ -2958,7 +2894,7 @@ public partial class MainForm : Form
             }
         }
         _ds4.SetButtonState(DualShock4Button.Options, (gb & 0x0010) != 0 && !_map.UsesSource(0x0010) && !Suppressed(DualShock4Button.Options,0x0010));
-        _ds4.SetButtonState(DualShock4Button.Share, (gb & 0x0020) != 0 && !_map.UsesSource(0x0020) && !Suppressed(DualShock4Button.Share,0x0020) && !ViewSuppresses(DualShock4Button.Share));
+        _ds4.SetButtonState(DualShock4Button.Share, (gb & 0x0020) != 0 && !_map.UsesSource(0x0020) && !Suppressed(DualShock4Button.Share,0x0020));
         ushort dpad=gb;
         foreach(int bit in new[]{1,2,4,8})if(_map.UsesSource(bit))dpad=(ushort)(dpad&~bit);
         _ds4.SetDPadDirection(MapDpad((XInputNative.GamepadButtons)dpad));
@@ -3374,10 +3310,11 @@ public partial class MainForm : Form
             _nudgeCursor, v => { _nudgeCursor = v; SaveSettingsNow(); },   // 推左摇杆移动光标（三版本可勾选）
             _swapShoulderTriggers, SetShoulderPreset, // 一键交换肩键/扳机
             _cursorSwitchMode, v => MappingEdited(()=>_cursorSwitchMode = v ? 1 : 0),   // 一键切光标（单键：Xbox=Home / DS=触摸板）
-            _enableFastInteract, v => MappingEdited(()=>_enableFastInteract = v),   // 快速交互（长按触发 F）
+            _enableFastInteract, v => SetHoldEnabled("interact",v),   // 快速交互（长按触发 F）
             _enableRun, _runThreshold, _autoRun, _runGameDefaultRun, _runReturnWalk,
             (run, thresh, auto, gameDefault, returnWalk) =>
             {
+                if(run&&!_enableRun&&!AllowNonHoldMapping(new[]{0x0040}))return;
                 bool modeChanged = gameDefault != _runGameDefaultRun;
                 _enableRun = run;
                 _runThreshold = thresh;
@@ -3418,11 +3355,7 @@ public partial class MainForm : Form
                 if (!wasdOn) ResetExpMoveKeys(); // 关闭实验移动时松开残留键
                 SaveSettingsNow();
             }, // 实验：左摇杆移动替代（触屏保留实验；WASD 已转正移入 手感与键位）
-            _enableViewHoldTab, _viewHoldMs,
-            (on, ms) =>
-            {
-                MappingEdited(()=>{_enableViewHoldTab=on;_viewHoldMs=ms;});
-            },
+            false, 200, (_, _) => { },
             _map.MeleePing, () => OpenRemap(focusMelee: true), // 近战/标点：设置页直接显示绑定 + 重设（打开弹窗即进入录键）
             _sourceIsDs, // 当前输入源是否 DS 系（决定 WASD 奔跑提示）
             // ---- v3.1 新增：按键映射区 / 实验 R3 组合 / 切换武器射击模式 ----
@@ -3443,7 +3376,7 @@ public partial class MainForm : Form
                 _fireModeCombo = mask;
                 _fireModeWasDown = _fireModeSent = false;
                 MappingEdited(()=>{});
-            }, initialSection:section,onReport:()=>MountStudioForm(new DiagnosticForm(BuildDiagnosticReport)),movementStatus:WasdLiveStatus,mappingStatus:()=>_gameKeys.MappingStatus(),onCleanup:()=>{Close();UninstallDrivers();},keyboardChordsEnabled:_keyboardChordsEnabled,keyboardChords:_keyboardChords.Select(c=>c.Normalize()!).ToList(),onKeyboardChords:SetKeyboardChords,experimentalCursorEnabled:_experimentalCursorEnabled,experimentalCursorKey:_experimentalCursorKey,onExperimentalCursor:SetExperimentalCursor,confirmKeyboardBindings:ConfirmKeyboardBindings,captureChanged:SetMappingCapture,readKeyboardChords:()=>{lock(_keyboardBindingGate)return(_keyboardChordsEnabled,_keyboardChords.Select(c=>c.Normalize()!).ToList());},readShortcut:ReadPadShortcut,onShortcut:SetPadShortcut,readPhysical:ReadPhysicalCapture);
+            }, initialSection:section,onReport:()=>MountStudioForm(new DiagnosticForm(BuildDiagnosticReport)),movementStatus:WasdLiveStatus,mappingStatus:()=>_gameKeys.MappingStatus(),onCleanup:()=>{Close();UninstallDrivers();},keyboardChordsEnabled:_keyboardChordsEnabled,keyboardChords:_keyboardChords.Select(c=>c.Normalize()!).ToList(),onKeyboardChords:SetKeyboardChords,experimentalCursorEnabled:_experimentalCursorEnabled,experimentalCursorKey:_experimentalCursorKey,onExperimentalCursor:SetExperimentalCursor,confirmKeyboardBindings:ConfirmKeyboardBindings,captureChanged:SetMappingCapture,readKeyboardChords:()=>{lock(_keyboardBindingGate)return(_keyboardChordsEnabled,_keyboardChords.Select(c=>c.Normalize()!).ToList());},readShortcut:ReadPadShortcut,onShortcut:SetPadShortcut,readPhysical:ReadPhysicalCapture,readHolds:ReadHoldOptions,onHoldEnabled:SetHoldEnabled,readRun:()=>_enableRun,onBrandSettings:BrandSettingsAction,onUpdate:UpdateAction,onRepair:OpenConnectionRepair);
         form.PrepareForStudio(section, (child,title) => MountStudioForm(child,title));
         MountStudioForm(form,StudioSections[Math.Clamp(section+1,1,7)],root:true);
         RefreshSensArea(); // 设置窗口里改的档位/趴下 → 主界面总结行同步
@@ -3474,20 +3407,21 @@ public partial class MainForm : Form
     /// <summary>设置窗口回调：快速趴下开关 + 时长（全版本开放）。</summary>
     private void SetProneFromSettings(bool enable, int ms)
     {
-        MappingEdited(()=>{_enableFastProne=enable;_holdProneDelayMs=Math.Clamp(ms,100,1000);});
+        if(enable!=_enableFastProne&&!SetHoldEnabled("prone",enable))return;
+        MappingEdited(()=>_holdProneDelayMs=Math.Clamp(ms,100,1000));
     }
 
     /// <summary>键位修正窗口（设置窗口入口）。</summary>
     private void OpenRemap(bool focusMelee = false)
     {
         var form = new RemapForm(_map, SaveSettingsNow, _comboMask,
-            v => { _comboMask = v; SaveSettingsNow(); },
-            _enableNukeCombo, v => MappingEdited(()=>_enableNukeCombo = v),
-            _enableFastInteract, v => MappingEdited(()=>_enableFastInteract = v),
-            _interactKey, v => MappingEdited(()=>_interactKey = v),
+            SetCursorCombo,
+            _enableNukeCombo, v => SetHoldEnabled("nuke",v),
+            _enableFastInteract, v => SetHoldEnabled("interact",v),
+            _interactKey, SetInteractSource,
             _swapShoulderTriggers, SetShoulderPreset,
             _map.MeleePing, v => { _map.MeleePing = v; SaveSettingsNow(); },
-            autoCaptureMelee: focusMelee,assignAction:AssignPhysicalAction,restoreActions:RestoreActionBindings,readPhysical:ReadPhysicalCapture,captureChanged:SetMappingCapture,sourceStatus:SourceOverrideName,readSwap:()=>_swapShoulderTriggers,readInteract:()=>_enableFastInteract);
+            autoCaptureMelee: focusMelee,assignAction:AssignPhysicalAction,restoreActions:RestoreActionBindings,readPhysical:ReadPhysicalCapture,captureChanged:SetMappingCapture,sourceStatus:SourceOverrideName,readSwap:()=>_swapShoulderTriggers,readInteract:()=>_enableFastInteract,readInteractKey:()=>_interactKey,readCombo:()=>_comboMask);
         MountStudioForm(form);
     }
 
@@ -3505,6 +3439,10 @@ public partial class MainForm : Form
         var form = new VoiceSettingsForm(_voiceMode, true, mode =>
         {
             _voiceMode = mode;
+            SaveSettingsNow();
+        },_audioCursorToggle,_audioTriggerButtons,(cursor,buttons)=>
+        {
+            lock(_keyboardBindingGate){_audioCursorToggle=cursor;_audioTriggerButtons=buttons.Where(SettingsStore.IsValidBind).Distinct().ToArray();ResetButtonAudio();}
             SaveSettingsNow();
         });
         MountStudioForm(form);

@@ -10,7 +10,7 @@ public sealed class KeyboardChordForm : Form
     {
         _commit=commit;Text=Lang.T("单个手柄键 → 两个键盘键","One pad button → two keyboard keys");Assets.Skin(this);Font=Assets.Ui(10);
         var page=new Panel{Dock=DockStyle.Fill,AutoScroll=true,Padding=new Padding(Dpi.Px(12))};_body=UiLayout.Stack(16);page.Controls.Add(_body);Controls.Add(page);
-        _enabled=UiLayout.Check(_body,Lang.T("启用实验键盘组合映射","Enable experimental keyboard chords"),enabled,_=>{});
+        _enabled=UiLayout.Check(_body,Lang.T("启用单键 → 键盘组合映射","Enable keyboard chords"),enabled,_=>{});
         UiLayout.Add(_body,UiLayout.Text(Lang.T("按住手柄键时按下两个键盘键，松开时一起释放。原手柄动作被替代；冲突会在应用前列出。","Hold the pad button to press both keyboard keys; release it to release both. Its original pad action is replaced. Conflicts are shown before applying.")));
         _hint=UiLayout.Text("");UiLayout.Add(_body,_hint);foreach(var item in bindings)AddRow(item);
         UiLayout.Action(_body,Lang.T("添加组合映射","Add chord binding"),()=>{AddRow(new());UiLayout.FitText(this);});

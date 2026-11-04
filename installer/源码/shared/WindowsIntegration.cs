@@ -6,6 +6,27 @@ namespace Burrito.Installer;
 
 public static class WindowsIntegration
 {
+    // Semaphore ownership is independent of threads and can span async work.
+    public static IDisposable AcquireMaintenance()
+    {
+        var semaphore=new Semaphore(1,1,@"Global\Burrito.CODM.ComponentMaintenance");
+        if(!semaphore.WaitOne(0)){semaphore.Dispose();throw new IOException("另一项安装或卸载正在进行，请等待完成后再试。");}
+        return new MaintenanceLease(semaphore);
+    }
+    sealed class MaintenanceLease(Semaphore semaphore):IDisposable
+    {public void Dispose(){semaphore.Release();semaphore.Dispose();}}
+    public static string ExistingRootOrDefault()
+    {
+        try
+        {
+            using var machine=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64);
+            using var entry=machine.OpenSubKey(Product.RegistryKey);
+            if(entry?.GetValue("InstallLocation") is string path)
+            {var record=InstallRecord.Load(Path.Combine(path,Product.RecordName));return record.Root;}
+        }
+        catch{}
+        return Product.DefaultRoot;
+    }
     public static void EnsureIdle()
     {
         if(Mutex.TryOpenExisting(@"Global\CODMControllerProbe_SingleInstance",out var m))using(m)

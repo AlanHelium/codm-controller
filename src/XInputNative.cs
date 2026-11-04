@@ -26,6 +26,7 @@ public static class XInputNative
         RightThumb = 0x0080,
         LeftShoulder = 0x0100,
         RightShoulder = 0x0200,
+        Guide = 0x0400,
         A = 0x1000,
         B = 0x2000,
         X = 0x4000,
@@ -68,8 +69,28 @@ public static class XInputNative
         public XInputVibration Vibration;
     }
 
-    [DllImport(Dll)]
-    public static extern int XInputGetState(int dwUserIndex, out XInputState pState);
+    [DllImport(Dll,EntryPoint="XInputGetState")]
+    private static extern int GetStandardState(int dwUserIndex, out XInputState pState);
+    // Ordinal 100 uses the XINPUT_STATE layout and includes Guide/Home (as in
+    // SDL's XInput backend). Keep a fallback for Windows implementations which
+    // do not expose this extension; do not guess bytes from unrelated HID data.
+    [DllImport(Dll,EntryPoint="#100")]
+    private static extern int GetExtendedState(int dwUserIndex, out XInputState pState);
+    private static int _extendedAvailable=1;
+    public static int XInputGetState(int dwUserIndex,out XInputState pState)
+    {
+        if(System.Threading.Volatile.Read(ref _extendedAvailable)!=0)
+        {
+            try
+            {
+                int result=GetExtendedState(dwUserIndex,out pState);
+                if(result==ERROR_SUCCESS)return result;
+            }
+            catch(EntryPointNotFoundException){System.Threading.Interlocked.Exchange(ref _extendedAvailable,0);}
+            catch(DllNotFoundException){System.Threading.Interlocked.Exchange(ref _extendedAvailable,0);}
+        }
+        return GetStandardState(dwUserIndex,out pState);
+    }
 
     [DllImport(Dll)]
     public static extern int XInputGetCapabilities(int dwUserIndex, uint dwFlags, out XInputCapabilities pCapabilities);

@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><EnableDefaultCompileItems>false</EnableDefaultCompileItems><OutputPath>bin/RepairChecks/</OutputPath></PropertyGroup>
+  <ItemGroup><Compile Include="RepairChecks.cs"/><Compile Include="../shared/*.cs"/><PackageReference Include="Nefarius.ViGEm.Client" Version="1.21.256"/></ItemGroup>
+</Project>

@@ -7,7 +7,7 @@ public partial class MainForm
     private Panel _studioContent=null!;
     private readonly List<StudioNav> _studioNav=new();
     private readonly List<Form> _studioForms=new();
-    private UiStack? _studioHome;
+    private Control? _studioHome;
     private Label? _studioDevice,_studioTier,_studioAds,_studioMove,_studioProfile;
     private int _studioSection;
     private bool _studioNavigating,_studioLang,_studioSync;
@@ -18,11 +18,12 @@ public partial class MainForm
     private Label? _studioState;
     private readonly ControllerDiscovery _controllerDiscovery=new();
     private readonly System.Windows.Forms.Timer _studioRefresh=new(){Interval=500};
+    private readonly System.Windows.Forms.Timer _deviceRefresh=new(){Interval=100};
     private long _nextDiscovery;
 
     private int _studioStick=1;
     private readonly List<(Button Button,string Key)> _studioCurveButtons=new();
-    private static string[] StudioSections=>new[]{Lang.T("总览","Overview"),Lang.T("手感调校","Feel tuning"),Lang.T("键位映射","Key mapping"),Lang.T("移动与奔跑","Move & sprint"),Lang.T("光标与交互","Cursor & holds"),Lang.T("震动与语音","Rumble & voice"),Lang.T("工具与配置","Tools & config"),Lang.T("实验性功能","Experimental")};
+    private static string[] StudioSections=>new[]{Lang.T("总览","Overview"),Lang.T("手感调校","Feel tuning"),Lang.T("键位映射","Key mapping"),Lang.T("移动与奔跑","Move & sprint"),Lang.T("光标与交互","Cursor & holds"),Lang.T("震动与音频提示","Rumble & audio"),Lang.T("工具与配置","Tools & config"),Lang.T("实验性功能","Experimental")};
     private void BuildHomeShell()
     {
         Controls.Clear();BackgroundImage=null;BackColor=StudioTheme.Background;FormBorderStyle=FormBorderStyle.None;
@@ -36,10 +37,10 @@ public partial class MainForm
         caption.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,Dpi.Px(40)));caption.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));caption.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         caption.Controls.Add(new StudioBrand{Dock=DockStyle.Fill,Margin=new Padding(0,Dpi.Px(4),Dpi.Px(8),Dpi.Px(4))},0,0);
         _lblTitle.Dock=DockStyle.Fill;_lblTitle.Font=StudioTheme.Font(11,FontStyle.Bold);_lblTitle.ForeColor=StudioTheme.Text;_lblTitle.Margin=Padding.Empty;_lblTitle.TextAlign=ContentAlignment.MiddleLeft;caption.Controls.Add(_lblTitle,1,0);
-        var actions=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,WrapContents=false,Margin=Padding.Empty};
-        foreach(var button in new[]{btnLang,btnVersion}){button.AutoSize=false;button.Size=new Size(Dpi.Px(button==btnLang?64:82),Dpi.Px(36));Assets.StyleOutline(button);actions.Controls.Add(button);}btnVersion.Click+=(_,_)=>OpenUnlock();
-        foreach(var item in new[]{("—",(Action)(()=>WindowState=FormWindowState.Minimized)),("□",()=>WindowState=WindowState==FormWindowState.Maximized?FormWindowState.Normal:FormWindowState.Maximized),("×",()=>Close())}) {
-            var b=new StudioButton{Text=item.Item1,Size=new Size(Dpi.Px(38),Dpi.Px(36)),Font=new Font("Segoe UI",12),Margin=new Padding(Dpi.Px(5),0,0,0),AccessibleName=item.Item1=="×"?"Close":item.Item1=="□"?"Maximize":"Minimize"};Assets.StyleOutline(b);b.Click+=(_,_)=>item.Item2();actions.Controls.Add(b);
+        var actions=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,WrapContents=false,Margin=Padding.Empty,Padding=new Padding(0,Dpi.Px(2),0,0)};
+        foreach(var button in new[]{btnLang,btnVersion}){button.AutoSize=false;button.MinimumSize=Size.Empty;button.Size=new Size(Dpi.Px(80),Dpi.Px(36));button.Margin=new Padding(Dpi.Px(6),0,0,0);button.Padding=Padding.Empty;button.Font=StudioTheme.Font(9,FontStyle.Bold);Assets.StyleOutline(button);actions.Controls.Add(button);}btnVersion.Click+=(_,_)=>OpenUnlock();
+        foreach(var item in new[]{(StudioCaptionAction.Minimize,(Action)(()=>WindowState=FormWindowState.Minimized)),(StudioCaptionAction.Maximize,()=>WindowState=WindowState==FormWindowState.Maximized?FormWindowState.Normal:FormWindowState.Maximized),(StudioCaptionAction.Close,()=>Close())}) {
+            var b=new StudioCaptionButton(item.Item1){Margin=new Padding(Dpi.Px(6),0,0,0),Padding=Padding.Empty};b.Click+=(_,_)=>item.Item2();SizeChanged+=(_,_)=>b.Invalidate();actions.Controls.Add(b);
         }
         caption.Controls.Add(actions,2,0);_studioShell.Controls.Add(caption,0,0);_studioShell.SetColumnSpan(caption,2);
         void Drag(object? _,MouseEventArgs e){if(e.Button!=MouseButtons.Left)return;ReleaseCapture();StudioSendMessage(Handle,0xA1,2,0);}
@@ -48,15 +49,17 @@ public partial class MainForm
         sidebar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));sidebar.RowStyles.Add(new RowStyle(SizeType.AutoSize));sidebar.RowStyles.Add(new RowStyle(SizeType.Percent,100));sidebar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var nav=UiLayout.Stack();nav.BackColor=StudioTheme.Sidebar;
         for(int i=0;i<StudioSections.Length;i++){int section=i;var b=new StudioNav{Text=StudioSections[i],Symbol=i,Font=StudioTheme.Font(10),Height=Dpi.Px(48),Margin=new Padding(0,0,0,Dpi.Px(4)),AccessibleName=StudioSections[i]};b.Click+=(_,_)=>ShowStudioSection(section);_studioNav.Add(b);UiLayout.Add(nav,b);}
-        sidebar.Controls.Add(nav,0,0);var signature=UiLayout.Stack(22);signature.BackColor=StudioTheme.Sidebar;UiLayout.Add(signature,StudioText("B U R R I T O",9,true,StudioTheme.Muted));UiLayout.Add(signature,StudioText(Lang.T("控制，从容一点","Control, with confidence"),8,false,StudioTheme.Muted));sidebar.Controls.Add(signature,0,2);_studioShell.Controls.Add(sidebar,0,1);
+        sidebar.Controls.Add(nav,0,0);var signature=UiLayout.Stack(12);signature.BackColor=StudioTheme.Sidebar;_editionSignature=StudioText("",8,true,StudioTheme.Muted);_editionTag=StudioText("",8,false,StudioTheme.Muted);UiLayout.Add(signature,_editionSignature);UiLayout.Add(signature,_editionTag);sidebar.Controls.Add(signature,0,2);_studioShell.Controls.Add(sidebar,0,1);
         _studioContent=new Panel{Dock=DockStyle.Fill,Margin=Padding.Empty,BackColor=StudioTheme.Background};_studioShell.Controls.Add(_studioContent,1,1);
+        InstallStandardPresentation();
         lblStatus.TextChanged+=(_,_)=>RefreshStudioState();_lblSummary.TextChanged+=(_,_)=>RefreshStudioState();ShowStudioSection(0);UiLayout.FitText(_studioShell);FormClosing+=(_,_)=>CloseStudioForms();
         _studioRefresh.Tick+=(_,_)=>{
             if(Environment.TickCount64>=_nextDiscovery){_nextDiscovery=Environment.TickCount64+1200;_controllerDiscovery.Refresh();}
             if(!_running){_gameKeys.Pump();_wasdShiftHold.Pump();}CheckNewPhysicalDevices();RefreshStudioState();
         };
         Shown+=(_,_)=>{_controllerDiscovery.Refresh();_studioRefresh.Start();};
-        FormClosed+=(_,_)=>{_studioRefresh.Stop();_studioRefresh.Dispose();_controllerDiscovery.Dispose();};
+        _deviceRefresh.Tick+=(_,_)=>{_deviceRefresh.Stop();_nextDiscovery=Environment.TickCount64+1200;_controllerDiscovery.Refresh();};
+        FormClosed+=(_,_)=>{_studioRefresh.Stop();_studioRefresh.Dispose();_deviceRefresh.Stop();_deviceRefresh.Dispose();_controllerDiscovery.Dispose();};
         Paint+=(_,e)=>{using var border=new Pen(StudioTheme.Border);e.Graphics.DrawRectangle(border,0,0,Width-1,Height-1);};
     }
     private static Label StudioText(string text,float size=10,bool bold=false,Color? color=null)=>new(){Text=text,AutoSize=true,Font=StudioTheme.Font(size,bold?FontStyle.Bold:FontStyle.Regular),ForeColor=color??StudioTheme.Text,BackColor=Color.Transparent,Margin=new Padding(0,0,0,Dpi.Px(8))};
@@ -69,7 +72,7 @@ public partial class MainForm
         // Preserve the status and Start button: the input loop continues to update these objects.
         foreach(var c in new Control[]{lblStatus,lblHidHide,btnToggle})if(c.Parent!=null)c.Parent.Controls.Remove(c);
         foreach(Control c in _studioContent.Controls.Cast<Control>().ToArray()){_studioContent.Controls.Remove(c);c.Dispose();}
-        _studioHome=null;_studioHero=null;_studioState=null;_studioSensitivity=null;_studioAdsSlider=null;_studioGraph=null;_studioCurveButtons.Clear();_studioSection=Math.Clamp(section,0,7);
+        _controllerSource=null;_studioHome=null;_studioHero=null;_studioState=null;_studioSensitivity=null;_studioAdsSlider=null;_studioGraph=null;_studioCurveButtons.Clear();_studioSection=Math.Clamp(section,0,7);
         foreach(var b in _studioNav){b.Selected=_studioNav.IndexOf(b)==_studioSection;b.Invalidate();}_studioNavigating=false;
         if(_studioSection==0)BuildStudioOverview();else if(_studioSection==1)BuildStudioFeel();else OpenSettings(_studioSection-1);RefreshStudioState();
     }
@@ -77,27 +80,6 @@ public partial class MainForm
     {
         var page=new Panel{Dock=DockStyle.Fill,AutoScroll=true,BackColor=StudioTheme.Background,Padding=new Padding(Dpi.Px(32),Dpi.Px(26),Dpi.Px(32),Dpi.Px(22))};_studioContent.Controls.Add(page);var body=UiLayout.Stack();page.Controls.Add(body);UiLayout.Add(body,StudioText(eyebrow,8,false,StudioTheme.Muted));var heading=StudioText(title,26,true);heading.Margin=new Padding(0,Dpi.Px(4),0,Dpi.Px(8));UiLayout.Add(body,heading);
         if(hint.Length>0){var note=StudioText(hint,10,false,StudioTheme.Muted);note.Margin=new Padding(0,0,0,Dpi.Px(22));UiLayout.Add(body,note);}page.SizeChanged+=(_,_)=>UiLayout.FitText(body);return body;
-    }
-    private void BuildStudioOverview()
-    {
-        var body=StudioPage(Lang.T("随时进入状态","Ready when you are"),"CONTROLLER WORKSPACE",Lang.T("连接设备，调整配置，然后开始转换。","Connect a controller, tune your profile, then start."));_studioHome=body;
-        var hero=new TableLayoutPanel{ColumnCount=2,RowCount=1,Dock=DockStyle.Top,Height=Dpi.Px(236),Margin=new Padding(0,0,0,Dpi.Px(10))};hero.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,58));hero.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,42));hero.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-        _studioHero=new StudioControllerHero{Dock=DockStyle.Fill,Margin=new Padding(0,0,Dpi.Px(20),0)};hero.Controls.Add(_studioHero,0,0);
-        var info=UiLayout.Stack();info.Margin=new Padding(0,Dpi.Px(12),0,0);_studioDevice=StudioText(Lang.T("设备待检测","Device not checked"),15,true);UiLayout.Add(info,_studioDevice);
-        _studioState=StudioText("",10,false,StudioTheme.Muted);_studioState.Margin=new Padding(0,Dpi.Px(4),0,Dpi.Px(12));UiLayout.Add(info,_studioState);
-        btnToggle.AutoSize=false;btnToggle.Height=Dpi.Px(46);btnToggle.Font=StudioTheme.Font(11,FontStyle.Bold);btnToggle.Margin=new Padding(0,Dpi.Px(12),0,Dpi.Px(10));Assets.StylePrimary(btnToggle);UiLayout.Add(info,btnToggle);UiLayout.Add(info,StudioAction(Lang.T("设备检测","Device check"),OpenDiag));hero.Controls.Add(info,1,0);UiLayout.Add(body,hero);UiLayout.Add(body,Divider());
-        var profileHead=new TableLayoutPanel{AutoSizeMode=AutoSizeMode.GrowAndShrink,ColumnCount=2,RowCount=1,AutoSize=false,Height=Dpi.Px(44),Dock=DockStyle.Top};profileHead.RowStyles.Add(new RowStyle(SizeType.AutoSize));profileHead.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));profileHead.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));profileHead.Controls.Add(StudioText(Lang.T("当前配置","CURRENT PROFILE"),11,true),0,0);profileHead.Controls.Add(StudioAction(Lang.T("管理配置 →","Manage profile →"),()=>ShowStudioSection(6)),1,0);UiLayout.Add(body,profileHead);
-        var profile=new StudioCardTable{AutoSizeMode=AutoSizeMode.GrowAndShrink,AutoSize=false,Height=Dpi.Px(82),Dock=DockStyle.Top,ColumnCount=3,RowCount=1,BackColor=StudioTheme.Surface,Padding=new Padding(Dpi.Px(16)),Margin=new Padding(0,0,0,Dpi.Px(18))};profile.RowStyles.Add(new RowStyle(SizeType.AutoSize));profile.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,Dpi.Px(46)));profile.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));profile.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));profile.Controls.Add(new StudioBrand{Size=new Size(Dpi.Px(34),Dpi.Px(34)),Margin=new Padding(0,Dpi.Px(6),Dpi.Px(12),0)},0,0);
-        var profileText=UiLayout.Stack();UiLayout.Add(profileText,StudioText(Lang.T("我的常用配置","My current profile"),11,true));_studioProfile=StudioText("",9,false,StudioTheme.Muted);UiLayout.Add(profileText,_studioProfile);profile.Controls.Add(profileText,1,0);profile.Controls.Add(StudioAction(Lang.T("编辑 →","Edit →"),()=>ShowStudioSection(1)),2,0);UiLayout.Add(body,profile);
-        var stats=new TableLayoutPanel{Dock=DockStyle.Top,AutoSize=false,Height=Dpi.Px(78),ColumnCount=3,RowCount=1,Margin=new Padding(0,0,0,Dpi.Px(20))};
-        stats.RowStyles.Add(new RowStyle(SizeType.Percent,100));for(int i=0;i<3;i++)stats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100f/3));
-        Label Stat(int i,string title){var stack=UiLayout.Stack();stack.HasLeftDivider=i>0;stack.Padding=new Padding(Dpi.Px(12),Dpi.Px(6),Dpi.Px(12),0);
-            var caption=StudioText(title,9,false,StudioTheme.Muted);caption.AutoSize=false;caption.Height=Dpi.Px(24);caption.TextAlign=ContentAlignment.MiddleCenter;UiLayout.Add(stack,caption);
-            var value=StudioText("",18,true);value.AutoSize=false;value.Height=Dpi.Px(36);value.TextAlign=ContentAlignment.MiddleCenter;UiLayout.Add(stack,value);stats.Controls.Add(stack,i,0);return value;}
-        stats.CellPaint+=(_,e)=>{if(e.Column>0){using var pen=new Pen(StudioTheme.Border);e.Graphics.DrawLine(pen,e.CellBounds.Left,e.CellBounds.Top+Dpi.Px(12),e.CellBounds.Left,e.CellBounds.Bottom-Dpi.Px(12));}};
-        _studioTier=Stat(0,Lang.T("灵敏度","Sensitivity"));_studioAds=Stat(1,Lang.T("开镜倍率","ADS multiplier"));_studioMove=Stat(2,Lang.T("移动方案","Movement"));UiLayout.Add(body,stats);
-        var quick=new TableLayoutPanel{AutoSizeMode=AutoSizeMode.GrowAndShrink,AutoSize=false,Height=Dpi.Px(48),Dock=DockStyle.Top,ColumnCount=2,RowCount=1};quick.RowStyles.Add(new RowStyle(SizeType.AutoSize));quick.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));quick.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));var feel=StudioAction(Lang.T("调整手感 →","Tune response →"),()=>ShowStudioSection(1));var keys=StudioAction(Lang.T("自定义键位 →","Customize keys →"),()=>ShowStudioSection(2));feel.Dock=keys.Dock=DockStyle.Fill;quick.Controls.Add(feel,0,0);quick.Controls.Add(keys,1,0);UiLayout.Add(body,quick);
-        UiLayout.FitText(body);
     }
     private void BuildStudioFeel()
     {
@@ -117,10 +99,12 @@ public partial class MainForm
     private void RefreshStudioState()
     {
         if(_studioShell==null||_studioNavigating)return;
-        if(_studioHome!=null&&!_studioHome.IsDisposed){var visual=ControllerVisuals.Select(_controllerDiscovery.Devices,SonyHidPad.IsOpen?SonyHidPad.DevicePath:XboxHidPad.IsOpen?XboxHidPad.DevicePath:"",_running&&_sourceSlot>=0&&!SonyHidPad.IsOpen&&!XboxHidPad.IsOpen);
-            _studioHero?.SetController(visual);_studioDevice!.Text=visual.Title;
-            bool working=_running&&!_outputPaused&&_physicalSessionReady&&_ds4!=null&&visual.Connected;
+        
+        if(_studioHome!=null&&!_studioHome.IsDisposed){bool freshInput=_captureFrameAt!=0&&Environment.TickCount64-_captureFrameAt<1000;var visual=ControllerVisuals.Select(_controllerDiscovery.Devices,freshInput&&SonyHidPad.IsOpen?SonyHidPad.DevicePath:freshInput&&XboxHidPad.IsOpen?XboxHidPad.DevicePath:"",_running&&freshInput&&_sourceSlot>=0&&!SonyHidPad.IsOpen&&!XboxHidPad.IsOpen,_controllerDiscovery.XInputConnected);
+            var actualVisual=visual;
+            bool working=_running&&!_outputPaused&&_physicalSessionReady&&_ds4!=null&&actualVisual.Connected;
             string startupError=_componentWaiting&&_componentReadyObserved?"":_conversionError;
+            _studioHero?.SetController(visual,working&&!_startingConversion&&startupError.Length==0);_studioDevice!.Text=visual.Title;
             _studioState!.Text=_startingConversion?Lang.T("● 正在准备转换，请稍候","● Preparing conversion…"):
                 startupError.Length>0?"● "+startupError:
                 _componentWaiting&&_componentReadyObserved?Lang.T("● 组件已就绪，可以重试启动","● Components ready; retry conversion"):
@@ -129,10 +113,10 @@ public partial class MainForm
                 working?Lang.T("● 转换已成功启动","● Conversion started successfully"):
                 _running?Lang.T("● 已连接 · 等待有效输入","● Connected · waiting for valid input"):
                 Lang.T("● 已连接 · 可以开始转换","● Connected · ready to start");
-            _studioState.ForeColor=startupError.Length>0?(_componentWaiting?StudioTheme.Accent:Assets.ErrRed):working?Assets.OkGreen:visual.Connected?StudioTheme.Accent:StudioTheme.Muted;_studioTier!.Text=$"{_freeSensLevel+1} / 20";_studioAds!.Text=$"{Math.Round(_adsMultiplier*100)}%";_studioMove!.Text=_expWasdMove?"WASD":Lang.T("原生摇杆","Analog");string style=_activePackKey.EndsWith("dyn")?Lang.T("动态曲线","Dynamic"):_activePackKey.EndsWith("std")?Lang.T("标准曲线","Standard"):Lang.T("线性曲线","Linear");_studioProfile!.Text=(_nativeInput?Lang.T("手柄原生","Pad native"):Lang.T("键鼠","Keyboard / mouse"))+" · "+style;}
+            _studioState.ForeColor=startupError.Length>0?(_componentWaiting?StudioTheme.Accent:Assets.ErrRed):working?Assets.OkGreen:visual.Connected?StudioTheme.Accent:StudioTheme.Muted;_studioTier!.Text=$"{_freeSensLevel+1} / 20";_studioAds!.Text=$"{Math.Round(_adsMultiplier*100)}%";_studioMove!.Text=_expWasdMove?"WASD":Lang.T("原生摇杆","Analog");string style=_activePackKey.EndsWith("dyn")?Lang.T("动态曲线","Dynamic"):_activePackKey.EndsWith("std")?Lang.T("标准曲线","Standard"):Lang.T("线性曲线","Linear");_studioProfile!.Text=(_nativeInput?Lang.T("手柄原生","Pad native"):Lang.T("键鼠","Keyboard / mouse"))+" · "+style;_controllerSource!.Text=Lang.T("实体手柄 · 标准转换链路","Physical controller · standard conversion");}
         if(_studioSensitivity!=null&&!_studioSensitivity.IsDisposed){_studioSync=true;try{_studioSensitivity.Value=_freeSensLevel+1;_studioSensitivityNumber!.Value=_freeSensLevel+1;_studioAdsSlider!.Value=(int)Math.Round(_adsMultiplier*100);_studioAdsNumber!.Value=_studioAdsSlider.Value;}finally{_studioSync=false;}foreach(var (b,key) in _studioCurveButtons)Assets.StyleCapsule(b,_activePackKey.EndsWith(key),false);_studioGraph?.Invalidate();}
     }
-    private void ReflowHome(){if(_studioShell==null)return;for(int i=0;i<_studioNav.Count;i++)_studioNav[i].Text=StudioSections[i];if(_studioLang!=Lang.En){_studioLang=Lang.En;BeginInvoke(()=>ShowStudioSection(_studioSection));}RefreshStudioState();UiLayout.FitText(_studioContent);}
+    private void ReflowHome(){if(_studioShell==null)return;RefreshEditionChrome();for(int i=0;i<_studioNav.Count;i++)_studioNav[i].Text=StudioSections[i];if(_studioLang!=Lang.En){_studioLang=Lang.En;BeginInvoke(()=>ShowStudioSection(_studioSection));}RefreshStudioState();UiLayout.FitText(_studioContent);}
     private void RestoreStudioFeelDefaults()
     {
         var defaults=AppSettings.CreateDefault();AppSettings.EnsurePacks(defaults);
@@ -153,6 +137,7 @@ public partial class MainForm
     }
     internal void MountStudioForm(Form form,string? title=null,bool root=false,bool keepParentOnClose=false)
     {
+        
         foreach(Control c in _studioContent.Controls)c.Visible=false;
         var wrapper=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=Padding.Empty,Padding=new Padding(Dpi.Px(24),Dpi.Px(16),Dpi.Px(24),Dpi.Px(16)),BackColor=StudioTheme.Background};wrapper.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));wrapper.RowStyles.Add(new RowStyle(SizeType.AutoSize));wrapper.RowStyles.Add(new RowStyle(SizeType.Percent,100));
         var bar=new TableLayoutPanel{AutoSizeMode=AutoSizeMode.GrowAndShrink,Dock=DockStyle.Top,AutoSize=true,ColumnCount=2,RowCount=1,Margin=new Padding(0,0,0,Dpi.Px(12))};bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));if(!root)bar.Controls.Add(StudioAction(Lang.T("← 返回","← Back"),()=>form.Close()),0,0);var heading=StudioText(title??form.Text,root?24:16,true);heading.Margin=new Padding(root?0:Dpi.Px(12),Dpi.Px(7),0,0);bar.Controls.Add(heading,1,0);wrapper.Controls.Add(bar,0,0);
@@ -163,5 +148,5 @@ public partial class MainForm
     private static IEnumerable<Control> Descendants(Control root){foreach(Control child in root.Controls){yield return child;foreach(var nested in Descendants(child))yield return nested;}}
     [DllImport("user32.dll")]private static extern bool ReleaseCapture();
     [DllImport("user32.dll",EntryPoint="SendMessageW")]private static extern IntPtr StudioSendMessage(IntPtr hWnd,int msg,int wParam,int lParam);
-    protected override void WndProc(ref Message m){if(m.Msg==0x84&&FormBorderStyle==FormBorderStyle.None&&WindowState==FormWindowState.Normal){base.WndProc(ref m);var pt=PointToClient(new Point(unchecked((short)(long)m.LParam),unchecked((short)((long)m.LParam>>16))));int edge=Dpi.Px(7);bool left=pt.X<edge,right=pt.X>=Width-edge,top=pt.Y<edge,bottom=pt.Y>=Height-edge;if(left||right||top||bottom)m.Result=(IntPtr)(top?(left?13:right?14:12):bottom?(left?16:right?17:15):left?10:11);return;}base.WndProc(ref m);}
+    protected override void WndProc(ref Message m){if(m.Msg==0x219&&_studioShell!=null&&!Disposing&&!IsDisposed&&!_closingInputSession&&!UiPreview.Enabled&&!_deviceRefresh.Enabled)_deviceRefresh.Start();if(m.Msg==0x84&&FormBorderStyle==FormBorderStyle.None&&WindowState==FormWindowState.Normal){base.WndProc(ref m);var pt=PointToClient(new Point(unchecked((short)(long)m.LParam),unchecked((short)((long)m.LParam>>16))));int edge=Dpi.Px(7);bool left=pt.X<edge,right=pt.X>=Width-edge,top=pt.Y<edge,bottom=pt.Y>=Height-edge;if(left||right||top||bottom)m.Result=(IntPtr)(top?(left?13:right?14:12):bottom?(left?16:right?17:15):left?10:11);return;}base.WndProc(ref m);}
 }

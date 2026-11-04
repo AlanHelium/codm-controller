@@ -160,9 +160,29 @@ internal sealed class StudioTabs : Panel
     private readonly List<Button> _buttons=new();private int _index;
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]public PageCollection TabPages{get;}
     [System.ComponentModel.DefaultValue(0)]public int SelectedIndex{get=>_index;set{_index=Math.Clamp(value,0,Math.Max(0,TabPages.Count-1));RefreshSelection();}}
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public StudioTabPage? SelectedPage
+    {
+        get => TabPages.Count == 0 ? null : TabPages[_index];
+        set { if (value != null && TabPages.Contains(value)) SelectedIndex = TabPages.IndexOf(value); }
+    }
     public StudioTabs(){TabPages=new PageCollection(this);Controls.Add(_body);Controls.Add(_header);}
     public sealed class PageCollection(StudioTabs owner):System.Collections.ObjectModel.Collection<StudioTabPage>
-    {protected override void InsertItem(int index,StudioTabPage page){base.InsertItem(index,page);page.Dock=DockStyle.Fill;owner._body.Controls.Add(page);var b=new StudioButton{Text=page.Text,Size=new Size(Dpi.Px(160),Dpi.Px(38)),Margin=new Padding(0,0,Dpi.Px(8),0),Font=StudioTheme.Font(10,FontStyle.Bold)};b.Click+=(_,_)=>owner.SelectedIndex=owner.TabPages.IndexOf(page);owner._buttons.Add(b);owner._header.Controls.Add(b);owner.RefreshSelection();}}
+    {
+        protected override void InsertItem(int index,StudioTabPage page)
+        {
+            var selected = owner.SelectedPage;
+            base.InsertItem(index,page);
+            page.Dock=DockStyle.Fill;owner._body.Controls.Add(page);
+            var button=new StudioButton{Text=page.Text,Size=new Size(Dpi.Px(160),Dpi.Px(38)),Margin=new Padding(0,0,Dpi.Px(8),0),Font=StudioTheme.Font(10,FontStyle.Bold)};
+            button.Click+=(_,_)=>owner.SelectedPage=page;
+            // Keep all three orders aligned when a page is inserted at the front.
+            owner._buttons.Insert(index,button);
+            owner._header.Controls.Add(button);
+            owner._header.Controls.SetChildIndex(button,index);
+            if(selected!=null)owner.SelectedPage=selected;else owner.RefreshSelection();
+        }
+    }
     private void RefreshSelection(){for(int i=0;i<TabPages.Count;i++){TabPages[i].Visible=i==_index;Assets.StyleCapsule(_buttons[i],i==_index,false);}if(TabPages.Count>0)TabPages[_index].BringToFront();}
 }
 

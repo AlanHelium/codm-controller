@@ -1,4 +1,4 @@
-﻿namespace Burrito.Installer;
+namespace Burrito.Installer;
 
 public static class SafeFiles
 {

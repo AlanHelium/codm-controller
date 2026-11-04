@@ -1,9 +1,9 @@
-﻿namespace CODMControllerProbe;
+namespace CODMControllerProbe;
 
 /// <summary>
 /// 语音设置总控台。
 /// - 免费版：仅提供固定的 TTS "Let's Go"，可选 开启/关闭，不可自定义（Pro 专属功能置灰说明）。
-/// - Pro 版：完整语音库 —— 真人语音（导入/勾选随机/删除/试听）+ 音量；
+/// - Pro 版：完整语音库 —— 外部载入音频（导入/勾选随机/删除/试听）+ 音量；
 ///   TTS 自定义句子 + 音量。
 /// 所有改动立即生效并保存到配置文件。
 /// </summary>
@@ -17,6 +17,8 @@ public class VoiceSettingsForm : Form
     private RadioButton rbTts = null!;
     private RadioButton rbHuman = null!;
     private StudioTabs tabs = null!;
+    private StudioTabPage _externalAudioPage = null!;
+    private StudioTabPage _ttsPage = null!;
     private StudioSlider trkHumanVol = null!;
     private Label lblHumanVol = null!;
     private CheckedListBox clbClips = null!;
@@ -25,13 +27,13 @@ public class VoiceSettingsForm : Form
     private ListBox lstLines = null!;
     private TextBox txtLine = null!;
 
-    public VoiceSettingsForm(int currentMode, bool isPro, Action<int> onModeChanged)
+    public VoiceSettingsForm(int currentMode, bool isPro, Action<int> onModeChanged,bool cursorAudio=true,IEnumerable<int>? triggerButtons=null,Action<bool,List<int>>? onTriggersChanged=null)
     {
         isPro = true; _isPro = true;
         _onModeChanged = onModeChanged;
         Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
 
-        Text = "语音设置";
+        Text = "按键音频提示";
         ClientSize = new Size(Dpi.Px(640), Dpi.Px(460));
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -42,7 +44,7 @@ public class VoiceSettingsForm : Form
 
         var lblMode = new Label
         {
-            Text = isPro ? "切换提示音" : "切换提示音（免费版）",
+            Text = "按键触发音频提示",
             Location = new Point(Dpi.Px(24), Dpi.Px(14)), Size = new Size(Dpi.Px(300), Dpi.Px(28)),
             Font = Assets.Ui(15F, FontStyle.Bold),
         };
@@ -50,7 +52,7 @@ public class VoiceSettingsForm : Form
         // ---- 模式选择 ----
         rbOff = MakeModeRadio("关闭", 24, 50);
         rbTts = MakeModeRadio("TTS 语音", 130, 50);
-        rbHuman = MakeModeRadio("真人语音", 240, 50);
+        rbHuman = MakeModeRadio("外部载入音频", 240, 50);
 
         if (isPro)
         {
@@ -58,7 +60,7 @@ public class VoiceSettingsForm : Form
         }
         else
         {
-            // 免费版：真人语音不可选（Pro 专属）
+            // 免费版：外部载入音频不可选（Pro 专属）
             rbHuman.Enabled = false;
             rbHuman.Text += "（Pro）";
         }
@@ -70,9 +72,11 @@ public class VoiceSettingsForm : Form
         {
             // ---- Pro：完整语音库选项卡 ----
             tabs = new StudioTabs { Location = new Point(Dpi.Px(24), Dpi.Px(86)), Size = new Size(Dpi.Px(590), Dpi.Px(330)) };
-            tabs.TabPages.Add(BuildHumanPage());
-            tabs.TabPages.Add(BuildTtsPage());
-            tabs.SelectedIndex = start == VoicePlayer.Tts ? 1 : 0;
+            _externalAudioPage = BuildHumanPage();
+            _ttsPage = BuildTtsPage();
+            tabs.TabPages.Add(_externalAudioPage);
+            tabs.TabPages.Add(_ttsPage);
+            SelectAudioPage(start);
 
             var btnPreview = new StudioButton
             {
@@ -101,7 +105,7 @@ public class VoiceSettingsForm : Form
             // ---- 免费版：简单说明 + 开/关 ----
             var hint = new Label
             {
-                Text = Lang.T("免费版：切换时播报固定的 TTS 语音 “Let's Go”，不可自定义句子、无真人语音。\nPro 版解锁完整语音库：自定义 TTS 句子、真人语音导入、随机播放勾选、音量调节。",
+                Text = Lang.T("免费版：切换时播报固定的 TTS 语音 “Let's Go”，不可自定义句子、无外部载入音频。\nPro 版解锁完整语音库：自定义 TTS 句子、外部载入音频导入、随机播放勾选、音量调节。",
                               "Free: fixed TTS prompt “Let's Go” on switch; no custom lines, no human clips.\nPro unlocks the full voice library: custom TTS lines, human clips, shuffle, volume."),
                 Location = new Point(Dpi.Px(24), Dpi.Px(92)), Size = new Size(Dpi.Px(580), Dpi.Px(56)),
                 ForeColor = Color.FromArgb(107, 114, 128), Font = Assets.Ui(9.5F),
@@ -122,6 +126,27 @@ public class VoiceSettingsForm : Form
         }
         _initializing = false;
         ArrangeLayout(lblMode);
+        if (tabs != null)
+        {
+            var page=new StudioTabPage("触发按键"){AutoScroll=true,Padding=new Padding(Dpi.Px(12))};
+            var body=UiLayout.Stack(12);page.Controls.Add(body);tabs.TabPages.Insert(0,page);tabs.SelectedPage=page;
+            UiLayout.Add(body,UiLayout.Text("选择哪些按键按下时播放音频提示",true));
+            UiLayout.Add(body,UiLayout.Text("可多选。按下播一次，长按不重复；不改变原来的游戏动作或键盘映射。音频模式选“关闭”时全部静音。仅转换运行且游戏在前台时生效，录制映射时不播放。"));
+            var selected=(triggerButtons??Array.Empty<int>()).Where(SettingsStore.IsValidBind).ToHashSet();
+            bool cursor=cursorAudio;
+            void SaveTriggers()=>onTriggersChanged?.Invoke(cursor,selected.OrderBy(x=>x).ToList());
+            UiLayout.Check(body,"光标切换成功时播放（兼容原来的 U / Alt 切换提示）",cursor,v=>{cursor=v;SaveTriggers();});
+            UiLayout.Add(body,UiLayout.Text("也可以单独指定以下实体按键："));
+            var choices=UiLayout.Buttons(body);
+            foreach(int source in MappingPolicy.PadSources)
+            {
+                int button=source;
+                var check=new StudioCheckBox{Text=KeyMap.BitName(button),Checked=selected.Contains(button),AutoSize=true,MinimumSize=new Size(Dpi.Px(90),Dpi.Px(34)),Margin=new Padding(0,0,Dpi.Px(14),Dpi.Px(8)),Font=Assets.Ui(10)};
+                check.CheckedChanged+=(_,_)=>{if(check.Checked)selected.Add(button);else selected.Remove(button);SaveTriggers();};choices.Controls.Add(check);
+            }
+            UiLayout.Add(body,UiLayout.Text("在“外部载入音频”或“TTS 语音”中设置内容、随机播放库和音量。Home / Logo 需要手柄固件实际报告该按键。"));
+            page.VisibleChanged+=(_,_)=>{if(page.Visible)UiLayout.FitText(body);};page.SizeChanged+=(_,_)=>UiLayout.FitText(body);UiLayout.FitText(body);
+        }
     }
 
 private void ArrangeLayout(Label title)
@@ -137,7 +162,7 @@ private void ArrangeLayout(Label title)
         var modes=UiLayout.Buttons(heading);
         foreach(var radio in new[]{rbOff,rbTts,rbHuman}) {radio.AutoSize=true;radio.MinimumSize=new Size(0,Dpi.Px(32));radio.Margin=new Padding(0,0,Dpi.Px(20),Dpi.Px(8));modes.Controls.Add(radio);}
         shell.Controls.Add(heading,0,0);
-        if(_isPro) {tabs.Dock=DockStyle.Fill;tabs.Margin=Padding.Empty;shell.Controls.Add(tabs,0,1);ArrangeVoicePage(tabs.TabPages[0],trkHumanVol,lblHumanVol,clbClips,null);ArrangeVoicePage(tabs.TabPages[1],trkTtsVol,lblTtsVol,lstLines,txtLine);}
+        if(_isPro) {tabs.Dock=DockStyle.Fill;tabs.Margin=Padding.Empty;shell.Controls.Add(tabs,0,1);ArrangeVoicePage(_externalAudioPage,trkHumanVol,lblHumanVol,clbClips,null);ArrangeVoicePage(_ttsPage,trkTtsVol,lblTtsVol,lstLines,txtLine);}
         else {var info=UiLayout.Stack();foreach(var hint in hints){hint.AutoSize=true;UiLayout.Add(info,hint);}shell.Controls.Add(info,0,1);}
         var footer=new FlowLayoutPanel {AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Dock=DockStyle.Top,FlowDirection=FlowDirection.RightToLeft,Padding=new Padding(0,Dpi.Px(12),0,0)};
         foreach(var button in buttons.Reverse()) {button.AutoSize=true;button.MinimumSize=new Size(Dpi.Px(120),Dpi.Px(40));UiLayout.Responsive(button);footer.Controls.Add(button);}
@@ -174,9 +199,22 @@ private void ArrangeLayout(Label title)
         };
         rb.CheckedChanged += (_, _) =>
         {
-            if (rb.Checked && !_initializing) _onModeChanged(CurrentMode());
+            if (rb.Checked && !_initializing)
+            {
+                int mode = CurrentMode();
+                _onModeChanged(mode);
+                SelectAudioPage(mode);
+            }
         };
+        rb.Click += (_, _) => { if (rb.Checked && !_initializing) SelectAudioPage(CurrentMode()); };
         return rb;
+    }
+
+    private void SelectAudioPage(int mode)
+    {
+        if (tabs == null) return;
+        if (mode == VoicePlayer.Tts) tabs.SelectedPage = _ttsPage;
+        else if (mode == VoicePlayer.Human) tabs.SelectedPage = _externalAudioPage;
     }
 
     private int CurrentMode()
@@ -186,11 +224,11 @@ private void ArrangeLayout(Label title)
         return VoicePlayer.Human;
     }
 
-    // ---- 真人语音页 ----
+    // ---- 外部载入音频页 ----
 
     private StudioTabPage BuildHumanPage()
     {
-        var page = new StudioTabPage("真人语音") { Padding = new Padding(12) };
+        var page = new StudioTabPage("外部载入音频") { Padding = new Padding(12) };
 
         var lblVol = new Label { Text = "音量", Location = new Point(Dpi.Px(14), Dpi.Px(16)), Size = new Size(Dpi.Px(50), Dpi.Px(20)) };
         lblHumanVol = new Label
@@ -230,7 +268,7 @@ private void ArrangeLayout(Label title)
                 VoiceStore.SetClipEnabled(clip, e.NewValue == CheckState.Checked);
         };
 
-        var btnAdd = new StudioButton { Text = "添加语音", Location = new Point(Dpi.Px(386), Dpi.Px(70)), Size = new Size(Dpi.Px(96), Dpi.Px(28)), FlatStyle = FlatStyle.Flat, Font = Assets.Ui(9F) };
+        var btnAdd = new StudioButton { Text = "载入音频", Location = new Point(Dpi.Px(386), Dpi.Px(70)), Size = new Size(Dpi.Px(96), Dpi.Px(28)), FlatStyle = FlatStyle.Flat, Font = Assets.Ui(9F) };
         Assets.StyleOutline(btnAdd);
         btnAdd.Click += (_, _) => AddClipDialog();
 

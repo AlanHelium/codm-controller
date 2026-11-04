@@ -15,10 +15,14 @@ public sealed class SetupRunner(Action<Update> progress)
         {
             progress(new(0,"检查安装位置、运行中的程序和包内文件"));
             if(System.Runtime.InteropServices.RuntimeInformation.OSArchitecture!=System.Runtime.InteropServices.Architecture.X64)throw new IOException("此安装包仅支持 Windows x64");
-            WindowsIntegration.EnsureIdle();root=SafeFiles.ValidateRoot(input);SafeFiles.CheckInstallTarget(root);
+            WindowsIntegration.EnsureIdle();using var maintenance=WindowsIntegration.AcquireMaintenance();root=SafeFiles.ValidateRoot(input);SafeFiles.CheckInstallTarget(root);
             var prior=File.Exists(Path.Combine(root,Product.RecordName))?InstallRecord.Load(Path.Combine(root,Product.RecordName)):null;
             if(prior?.UninstallPending==true)
-            {outcome.RestartRequired=Drivers.Packages.Any(d=>Drivers.RemovalPending(d.Name));outcome.Summary="这个目录仍有待完成的卸载，请先运行目录内的卸载器完成复查，再重新安装";progress(new(2,outcome.Summary));return outcome;}
+            {
+                outcome.RestartRequired=Drivers.Packages.Any(d=>Drivers.RemovalPending(d.Name)||Drivers.NeedsRebootAfterRemoval(Drivers.Inspect(d.Name),Drivers.Loaded(d.Name)));
+                if(outcome.RestartRequired){outcome.Summary="Windows 仍在释放上次移除的组件，请保存工作后重启再安装";progress(new(2,outcome.Summary));return outcome;}
+                Log("上次卸载记录已核对，无待释放组件，继续本次安装并修复需要的项目");
+            }
             var assembly=typeof(SetupRunner).Assembly;
             using var manifest=assembly.GetManifestResourceStream("payload.manifest")??throw new IOException("缺少安装清单");
             var payloads=JsonSerializer.Deserialize<List<Payload>>(manifest)??throw new IOException("安装清单无效");
@@ -43,6 +47,7 @@ public sealed class SetupRunner(Action<Update> progress)
                 else{outcome.HasWarnings=true;outcome.Details.Add(shortcutWarning);Log(shortcutWarning+" 软件文件与驱动安装将继续。");}
             }
             finally{SafeFiles.DeleteOwnedTree(staging,staging);}
+            outcome.FilesInstalled=true;
             progress(new(1,"准备官方手柄驱动"));var drivers=await Drivers.Install(root,Log);outcome.RestartRequired=drivers.Reboot;outcome.Details.AddRange(drivers.States.Select(s=>s.Name+"："+s.Summary));
             outcome.Success=drivers.Success;outcome.Details.AddRange(drivers.Problems);
             var installed=InstallRecord.Load(Path.Combine(root,Product.RecordName));
@@ -50,8 +55,9 @@ public sealed class SetupRunner(Action<Update> progress)
             progress(new(1,"检查驱动接口，等待 Windows 完成初始化"));
             var readiness=await CODMControllerProbe.ComponentProbe.WaitAsync(root);outcome.RestartRequired|=readiness.NeedsRestart;outcome.ReadyToLaunch=drivers.Success&&readiness.Ready;
             outcome.Details.Add(readiness.Message);
-            foreach(var state in new[]{readiness.Vigem,readiness.HidHide})outcome.Details.Add(state.Name+"："+(state.RuntimeReady?"接口可用":state.Installed?"已安装，接口尚未就绪":"尚未安装")+(state.Error.Length>0?"；"+state.Error:""));
-            outcome.Summary=!drivers.Success?"安装未完成，已保留卸载入口和详细记录，可修复或卸载":outcome.RestartRequired?"文件与组件已安装，Windows 需要重启完成更新；可稍后重启":outcome.ReadyToLaunch?"安装完成，组件接口已就绪，可以开始使用":"文件与组件已安装，接口尚未就绪；请重新检查或重插手柄";
+            outcome.Details.AddRange(readiness.Details);
+            string action=prior!=null?"软件更新完成":"软件安装完成";
+            outcome.Summary=!drivers.Success?action+"；驱动准备未完成，请查看具体记录":outcome.RestartRequired?action+"；Windows 尚有组件更新待完成，可稍后重启":outcome.ReadyToLaunch?action+"，可以开始使用":action+"；"+string.Join("、",new[]{readiness.Vigem,readiness.HidHide}.Where(s=>!s.RuntimeReady).Select(s=>s.Name))+" 暂时无法调用，可打开软件查看诊断";
             if(shortcutWarning!=null)outcome.Summary+="；开始菜单快捷方式未创建，请从安装目录打开软件";
             progress(new(2,outcome.Summary));
         }
