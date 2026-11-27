@@ -9,7 +9,7 @@ public sealed class DiagForm:Form
     readonly Button _refresh,_start;
     readonly System.Windows.Forms.Timer _timer=new(){Interval=1800};
     bool _refreshing;
-    public DiagForm(Func<Task<StartupDiagnosticData>> capture,Action startConversion,Action openGuide)
+    public DiagForm(Func<Task<StartupDiagnosticData>> capture,Action startConversion,Action openGuide,Action? repair=null)
     {
         _capture=capture;Text=Lang.T("设备检测","Device diagnostics");Font=Assets.Ui(9.5f);Assets.Skin(this);
         ClientSize=new(Dpi.Px(850),Dpi.Px(650));
@@ -25,7 +25,7 @@ public sealed class DiagForm:Form
             var card=UiLayout.Card(_body,names[i]);var state=UiLayout.Text(Lang.T("检测中…","Checking…"));var detail=UiLayout.Text("");
             state.Font=Assets.Ui(10,FontStyle.Bold);UiLayout.Add(card,state);UiLayout.Add(card,detail);_rows[i]=(state,detail);
         }
-        var footer=UiLayout.Buttons(_body);_refresh=UiLayout.Choice(footer,Lang.T("刷新检测","Refresh"),()=>_=RefreshAsync());
+        var footer=UiLayout.Buttons(_body);if(repair!=null)UiLayout.Choice(footer,Lang.T("一键检查与修复","Check and repair"),repair);_refresh=UiLayout.Choice(footer,Lang.T("刷新检测","Refresh"),()=>_=RefreshAsync());
         _start=UiLayout.Choice(footer,Lang.T("启动转换","Start conversion"),startConversion);_start.Enabled=false;
         UiLayout.Choice(footer,Lang.T("使用引导","Setup guide"),openGuide);UiLayout.Choice(footer,Lang.T("完成","Done"),Close);
         var note=UiLayout.Text(Lang.T("检测会自动刷新。只有 Windows 确实要求重启时才显示待重启；由你选择重启时间。","Checks refresh automatically. Restart is shown only when required; you choose when."));shell.Controls.Add(note,0,1);

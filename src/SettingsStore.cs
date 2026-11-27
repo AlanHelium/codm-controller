@@ -226,6 +226,9 @@ public class AppSettings
     public int FireModeCombo { get; set; } = 0;
     public string FireModeKeyboardKey { get; set; } = "B";
 
+    /// <summary>键盘注入方式（0~4 对应界面「方式 1~5」）。游戏更新后旧通道失效时由用户逐个实测。</summary>
+    public int InputChannel { get; set; } = 0;
+
     /// <summary>是否首次启动（true → 打开后展示使用引导；展示后立即置 false 保存）。</summary>
     public bool FirstRun { get; set; } = true;
 

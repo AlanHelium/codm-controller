@@ -64,6 +64,13 @@ public static class WindowsIntegration
         if(File.Exists(Product.Shortcut))File.Delete(Product.Shortcut);
         using var runOnce=machine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",true);runOnce?.DeleteValue("CODMControllerProbeCleanup",false);
     }
+    public static void CancelCleanup(InstallRecord r)
+    {
+        using var machine=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64);
+        using var key=machine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce",true);
+        string expected="\""+Path.Combine(r.Root,Product.UninstallName)+"\" --resume";
+        if(key?.GetValue(CleanupName(r)) is string command&&command.Equals(expected,StringComparison.OrdinalIgnoreCase))key.DeleteValue(CleanupName(r),false);
+    }
     public static string? ResumeAfterReboot(InstallRecord r)
     {
         using var machine=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64);using var key=machine.CreateSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce");

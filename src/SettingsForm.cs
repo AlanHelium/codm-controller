@@ -111,7 +111,7 @@ public sealed class SettingsForm : Form
         Action<bool, int, bool, int, int> onFireModeChanged, int initialSection = -1, Action? onReport = null, Func<string>? movementStatus = null, Func<string>? mappingStatus = null, Action? onCleanup = null,
         bool keyboardChordsEnabled=false,List<PadKeyboardChord>? keyboardChords=null,Func<bool,IEnumerable<PadKeyboardChord>,Task<bool>>? onKeyboardChords=null,
         bool experimentalCursorEnabled=false,int experimentalCursorKey=0x0040,Func<bool,int,Task<bool>>? onExperimentalCursor=null,
-        Func<List<PadKeyBind>,Task<bool>>? confirmKeyboardBindings=null,Action<bool>? captureChanged=null,Func<(bool Enabled,List<PadKeyboardChord> Bindings)>? readKeyboardChords=null,Func<PadShortcut>? readShortcut=null,Func<PadShortcut,Task<bool>>? onShortcut=null,Func<XInputNative.XInputGamepad?>? readPhysical=null,Func<HoldOptions>? readHolds=null,Func<string,bool,bool>? onHoldEnabled=null,Func<bool>? readRun=null,Action? onBrandSettings=null,Action? onUpdate=null,Action? onRepair=null)
+        Func<List<PadKeyBind>,Task<bool>>? confirmKeyboardBindings=null,Action<bool>? captureChanged=null,Func<(bool Enabled,List<PadKeyboardChord> Bindings)>? readKeyboardChords=null,Func<PadShortcut>? readShortcut=null,Func<PadShortcut,Task<bool>>? onShortcut=null,Func<XInputNative.XInputGamepad?>? readPhysical=null,Func<HoldOptions>? readHolds=null,Func<string,bool,bool>? onHoldEnabled=null,Func<bool>? readRun=null,Action? onBrandSettings=null,Action? onUpdate=null,Action? onRepair=null,int inputChannel=0,Action<int>? onInputChannel=null)
     {
         _versionLevel = versionLevel;
         _onSensLevel = onSensLevel;
@@ -362,7 +362,7 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
         UiLayout.Action(config,Lang.T("使用引导 →","Setup guide →"),onGuide);
         UiLayout.Action(config,Lang.T("更新日志 →","Release notes →"),()=>OpenInline(new ChangelogForm(),Lang.T("更新日志","Release notes")));
         var advanced=UiLayout.Card(tools,Lang.T("维护与重置","Maintenance & reset"));
-        if(onRepair!=null){UiLayout.Action(advanced,Lang.T("修复连接组件 →","Repair connection components →"),onRepair,true);UiLayout.Add(advanced,UiLayout.Text(Lang.T("打开修复工具时会正常退出转换器并保留配置；先退出游戏及模拟器。","Opening repair exits the converter normally and keeps settings. Exit the game and emulator first.")));}
+        if(onRepair!=null){UiLayout.Action(advanced,Lang.T("一键检查与修复 →","Check and repair →"),onRepair,true);UiLayout.Add(advanced,UiLayout.Text(Lang.T("打开修复工具时会正常退出转换器并保留配置；先退出游戏及模拟器。","Opening repair exits the converter normally and keeps settings. Exit the game and emulator first.")));}
         if(onCleanup!=null)UiLayout.Action(advanced,Lang.T("打开清理 / 卸载工具…","Open cleanup / uninstall tool…"),onCleanup);
         UiLayout.Add(advanced,UiLayout.Text(Lang.T("关闭主窗口只退出软件。点击清理工具会退出转换器并打开清理界面，由你选择范围和重启时间。","Closing the main window only exits the app. Opening cleanup exits the converter; you choose the cleanup scope and restart time.")));
         UiLayout.Action(advanced,Lang.T("恢复默认设置…","Restore defaults…"),()=>onReset());
@@ -370,6 +370,27 @@ Dpi.Scale = Math.Max(1f, DeviceDpi / 96f);
         }
         if(initialSection<0 || initialSection==6) {
         var experiments=_pages[6].Stack;
+        if(onInputChannel!=null)
+        {
+            var channelCard=UiLayout.Card(experiments,Lang.T("输入方式 · 游戏更新后按键失效时用","Input method · when keys stop working after a game update"),
+                Lang.T("游戏更新后如果 U / J / F / H / Tab、映射键、组合键或长按不生效，按下面顺序逐个切换，每次切完回到游戏里试同一个键。哪一方式能触发就停在哪一方式，选择立即保存、下次启动沿用。","If U / J / F / H / Tab, mapped keys, chords or long-press stop working after a game update, switch through the methods below and test the same key in-game after each switch. Keep the method that works; the choice is saved and reused at next launch."));
+            int chosen=InputChannel.Valid(inputChannel)?inputChannel:0;
+            var currentLabel=UiLayout.Text("");currentLabel.Font=Assets.Ui(10f,FontStyle.Bold);currentLabel.ForeColor=Assets.MainText;
+            var hintLabel=UiLayout.Text("");
+            void RefreshChannel()
+            {
+                currentLabel.Text=Lang.T($"当前：方式 {chosen+1} · {InputChannel.Name(chosen)}",$"Current: Method {chosen+1} · {InputChannel.Name(chosen)}");
+                hintLabel.Text=InputChannel.Hint(chosen);
+            }
+            RefreshChannel();UiLayout.Add(channelCard,currentLabel);
+            for(int i=0;i<InputChannel.Count;i++)
+            {
+                int idx=i;
+                UiLayout.Action(channelCard,Lang.T($"方式 {i+1}：{InputChannel.Name(i)}",$"Method {i+1}: {InputChannel.Name(i)}"),()=>{onInputChannel(idx);chosen=idx;RefreshChannel();},i==chosen);
+            }
+            UiLayout.Add(channelCard,hintLabel);
+            UiLayout.Add(channelCard,UiLayout.Text(Lang.T("方式 2、3、4 走系统按键事件，只在游戏处于前台时发送，切出游戏不会误操作桌面。方式 4 可能把一次按键识别两次，其它方式能用时不要用它。WASD 移动走另一条通道，不受这里影响。","Methods 2, 3 and 4 use system key events and only send while the game is in the foreground, so they never leak to the desktop. Method 4 may register one press twice; avoid it when another method works. WASD movement uses a separate path and is not affected.")));
+        }
         if(onBrandSettings!=null) {
             var brand=UiLayout.Card(experiments,Lang.T("品牌展示","Brand presentation"),Lang.T("设置任意手柄接入演示、型号配色、光效与连接卡片。","Configure plug-in demos, model colors, lighting and connection cards."));
             UiLayout.Action(brand,Lang.T("品牌展示设置 →","Brand presentation settings →"),onBrandSettings);

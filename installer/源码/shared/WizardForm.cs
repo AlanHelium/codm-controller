@@ -38,121 +38,82 @@ public sealed class WarmButton:Button
 }
 public sealed class WizardForm:Form
 {
-    private readonly bool _install,_preview,_componentOnly,_repairMode;
-    private readonly Func<string,bool,bool,Task<Outcome>> _run;
-    private readonly Func<bool> _restart;
-    private readonly string _readme;
-    private readonly Panel _viewport=new(){Dock=DockStyle.Fill,AutoScroll=true,Padding=new Padding(24,0,24,0),BackColor=Appearance.Background};
-    private readonly Panel _document=new(){Dock=DockStyle.Fill,Visible=false,Padding=new Padding(24,8,24,8)};
-    private readonly TextBox _path=new(){Dock=DockStyle.Fill,BorderStyle=BorderStyle.FixedSingle,BackColor=Appearance.Surface,ForeColor=Appearance.Text};
-    private readonly CheckBox _agree=new(){Text="我已阅读必看说明，并知悉以上安装内容与安全提示",AutoSize=true,UseCompatibleTextRendering=true,ForeColor=Appearance.Text,BackColor=Appearance.Background,Margin=new Padding(0,4,0,12)};
-    private readonly CheckBox _drivers=new(){Text="移除 ViGEmBus / HidHide 共享驱动",Checked=true,AutoSize=true,UseCompatibleTextRendering=true,ForeColor=Appearance.Text,BackColor=Appearance.Surface};
-    private readonly CheckBox _data=new(){Text="删除当前用户的配置、授权、语音和维护记录",Checked=true,AutoSize=true,UseCompatibleTextRendering=true,ForeColor=Appearance.Text,BackColor=Appearance.Surface};
-    private readonly TextBox _log=new(){Multiline=true,ReadOnly=true,TabStop=false,ScrollBars=ScrollBars.Vertical,Height=136,Dock=DockStyle.Fill,BackColor=Appearance.Background,ForeColor=Appearance.Muted,BorderStyle=BorderStyle.None,Visible=false};
-    private readonly Label _status=Appearance.Label("等待开始",10,true);
-    private readonly Label[] _steps=new Label[3];
-    private readonly FlowLayoutPanel _footer=new(){Dock=DockStyle.Fill,WrapContents=false,Padding=new Padding(24,12,14,12)};
-    private readonly WarmButton _primary=new(){Primary=true},_close=new(){Text="取消",Width=86},_read=new(){Text="必看说明",Width=104},_browse=new(){Text="选择文件夹",Width=108},_logs=new(){Text="详细记录",Width=104},_back=new(){Text="返回",Width=100,Visible=false};
-    private bool _busy;
-    private Outcome? _outcome;
-    private TableLayoutPanel _body=null!;
+    readonly bool _install,_preview,_componentOnly,_repairMode;
+    readonly Func<string,bool,bool,Task<Outcome>> _run;
+    readonly Func<bool> _restart;
+    readonly string _readme;
+    readonly Panel _viewport=new(){Dock=DockStyle.Fill,AutoScroll=true,Padding=new Padding(26,0,26,0)};
+    readonly TextBox _path=new(){Dock=DockStyle.Fill};
+    readonly CheckBox _drivers=new(){Text="同时移除 ViGEmBus / HidHide 共享驱动",Checked=true,AutoSize=true};
+    readonly CheckBox _data=new(){Text="同时删除个人配置与音频",Checked=true,AutoSize=true};
+    readonly TextBox _log=new(){Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,Height=180,Dock=DockStyle.Fill,BackColor=Appearance.Surface,ForeColor=Appearance.Text,BorderStyle=BorderStyle.None};
+    readonly Label _advice=Appearance.Label("",10);
+    readonly WarmButton _repairAction=new(){Text="打开修复工具",Width=136,Visible=false};
+    readonly Label _status=Appearance.Label("准备就绪",12,true);
+    readonly WarmButton _primary=new(){Primary=true,Width=172},_close=new(){Text="取消",Width=88};
+    readonly LinkLabel _options=new(){Text="安装选项 ▾",AutoSize=true,LinkColor=Appearance.Muted,ActiveLinkColor=Appearance.Accent,Margin=new Padding(0,6,0,12)};
+    readonly LinkLabel _details=new(){Text="展开详细记录 ▾",AutoSize=true,LinkColor=Appearance.Muted,ActiveLinkColor=Appearance.Accent,Margin=new Padding(0,12,0,10)};
+    readonly ProgressBar _progress=new(){Dock=DockStyle.Top,Height=5,Visible=false,Style=ProgressBarStyle.Marquee};
+    TableLayoutPanel _body=null!,_optionPanel=null!,_detailPanel=null!;
+    bool _busy;
+    Outcome? _outcome;
     public bool CleanupCachesOnClose {get;private set;}
     public string InstallRoot=>_path.Text;
     public WizardForm(bool install,string root,string readme,Func<string,bool,bool,Task<Outcome>> run,Func<bool> restart,bool preview=false,bool componentOnly=false,bool repairMode=false)
     {
-        _install=install;_run=run;_restart=restart;_readme=readme;_preview=preview;_componentOnly=componentOnly;_repairMode=repairMode;_path.ReadOnly=componentOnly;_browse.Visible=!componentOnly;
-        Text=Product.Name+(repairMode?" · 连接修复":componentOnly?" · 组件准备":install?" · 安装":" · 卸载");ClientSize=new(920,740);MinimumSize=new(840,650);StartPosition=FormStartPosition.CenterScreen;BackColor=Appearance.Background;ForeColor=Appearance.Text;Font=new("Microsoft YaHei UI",9.5f);MaximizeBox=false;
-        var shell=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=3,BackColor=Appearance.Background,Margin=Padding.Empty};shell.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,202));shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));shell.RowStyles.Add(new RowStyle(SizeType.Absolute,108));shell.RowStyles.Add(new RowStyle(SizeType.Percent,100));shell.RowStyles.Add(new RowStyle(SizeType.Absolute,68));Controls.Add(shell);
-        var side=new Panel{Dock=DockStyle.Fill,BackColor=Color.FromArgb(27,29,32),Padding=new Padding(22,26,20,20)};shell.Controls.Add(side,0,0);shell.SetRowSpan(side,3);var nav=Appearance.Stack(side);
-        Appearance.Add(nav,Appearance.Label("BURRITO",11,true));Appearance.Add(nav,Appearance.Label("CODM\n手柄转换器",19,true));Appearance.Add(nav,Appearance.Label("v"+Product.Version,9));Appearance.Add(nav,new Panel{Height=30,Dock=DockStyle.Top});
-        string[] steps=repairMode?["检查连接","修复组件","确认结果"]:install?["检查准备","安装组件","开始使用"]:["恢复输入","移除组件","核验结果"];
-        for(int i=0;i<3;i++){_steps[i]=Appearance.Label($"0{i+1}   {steps[i]}",10,i==0);_steps[i].Margin=new(0,0,0,24);Appearance.Add(nav,_steps[i]);}
-        var credit=Appearance.Label("控制，从容一点。\n安装内容与清理结果\n都会在这里说清。",8.5f);credit.Dock=DockStyle.Bottom;side.Controls.Add(credit);
-        var heading=new Panel{Dock=DockStyle.Fill,Padding=new(24,22,24,0)};shell.Controls.Add(heading,1,0);var title=Appearance.Stack(heading);Appearance.Add(title,Appearance.Label(repairMode?"恢复连接，继续使用。":install?"准备好，就开始。":"卸载，也清楚交代。",22,true));Appearance.Add(title,Appearance.Label(repairMode?"先检查具体原因，再修复连接组件":install?"自选安装位置 · 文件与驱动逐项说明":"先退出游戏和转换器，再移除所选项目",9.5f));
-        var host=new Panel{Dock=DockStyle.Fill,BackColor=Appearance.Background};host.Controls.Add(_viewport);host.Controls.Add(_document);shell.Controls.Add(host,1,1);_body=Appearance.Stack(_viewport);_path.Text=root;
-        BuildBody();shell.Controls.Add(_footer,1,2);foreach(var b in new[]{_primary,_close,_read,_logs,_back})_footer.Controls.Add(b);
-        _primary.Text=repairMode?"开始修复":componentOnly?"准备组件":install?"开始安装":"开始卸载";_primary.Enabled=!install||repairMode;_agree.CheckedChanged+=(_,_)=>{if(!_busy)_primary.Enabled=_agree.Checked;};
-        _primary.Click+=async(_,_)=>await Execute();_close.Click+=(_,_)=>Close();_read.Click+=(_,_)=>ShowReadme();_back.Click+=(_,_)=>HideReadme();_logs.Click+=(_,_)=>{if(_outcome!=null&&_log.Visible)SaveLog();else{_log.Visible=!_log.Visible;if(_outcome!=null)_logs.Text="保存记录";Reflow();if(_log.Visible)_viewport.ScrollControlIntoView(_log);}};
-        _browse.Click+=(_,_)=>{using var picker=new FolderBrowserDialog{Description="选择父文件夹，软件会使用独立的 CODM手柄转换器 子文件夹",SelectedPath=_path.Text,UseDescriptionForTitle=true};if(picker.ShowDialog(this)==DialogResult.OK){string chosen=picker.SelectedPath;_path.Text=Path.GetFileName(chosen)=="CODM手柄转换器"?chosen:Path.Combine(chosen,"CODM手柄转换器");}};
-        _viewport.SizeChanged+=(_,_)=>Reflow();Shown+=(_,_)=>{Reflow();if(_preview)_status.Text="界面预览，不执行安装或卸载";};FormClosing+=(_,e)=>{if(_busy&&e.CloseReason!=CloseReason.WindowsShutDown)e.Cancel=true;};
+        _install=install;_run=run;_restart=restart;_readme=readme;_preview=preview;_componentOnly=componentOnly;_repairMode=repairMode;_path.Text=root;
+        Text=Product.Name+(_repairMode?" · 修复工具":install?" · 安装":" · 卸载");ClientSize=new(710,555);MinimumSize=new(650,510);StartPosition=FormStartPosition.CenterScreen;BackColor=Appearance.Background;ForeColor=Appearance.Text;Font=new("Microsoft YaHei UI",9.5f);MaximizeBox=false;AutoScaleMode=AutoScaleMode.Dpi;
+        var shell=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Margin=Padding.Empty};shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));shell.RowStyles.Add(new RowStyle(SizeType.Absolute,108));shell.RowStyles.Add(new RowStyle(SizeType.Percent,100));shell.RowStyles.Add(new RowStyle(SizeType.Absolute,74));Controls.Add(shell);
+        var header=new Panel{Dock=DockStyle.Fill,Padding=new Padding(26,22,26,0)};var h=Appearance.Stack(header);Appearance.Add(h,Appearance.Label(_repairMode?"修复软件":install?"安装 CODM 手柄转换器":"卸载 CODM 手柄转换器",20,true));Appearance.Add(h,Appearance.Label("v"+Product.Version+" · "+(_repairMode?"自动检查并处理已知问题":install?"沿用已有配置，可直接覆盖安装":"默认移除程序、个人配置及共享驱动"),9));shell.Controls.Add(header,0,0);
+        shell.Controls.Add(_viewport,0,1);_body=Appearance.Stack(_viewport);BuildBody();
+        var footer=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.RightToLeft,Padding=new Padding(20,14,26,12),WrapContents=false};footer.Controls.Add(_primary);footer.Controls.Add(_close);footer.Controls.Add(_repairAction);shell.Controls.Add(footer,0,2);
+        _primary.Text=StartText;_primary.Click+=async(_,_)=>await Execute();_close.Click+=(_,_)=>Close();
+        _repairAction.Click+=(_,_)=>{string exe=Path.Combine(_path.Text,LocalRecovery.RepairExe);try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe){UseShellExecute=true});Close();}catch(Exception ex){_advice.Text="修复工具未能启动："+ex.Message;}};
+        _options.Click+=(_,_)=>{_optionPanel.Visible=!_optionPanel.Visible;_options.Text=(_install?"安装选项":"卸载选项")+(_optionPanel.Visible?" ▴":" ▾");Reflow();};
+        _details.Click+=(_,_)=>{_detailPanel.Visible=!_detailPanel.Visible;_details.Text=_detailPanel.Visible?"收起详细记录 ▴":"展开详细记录 ▾";Reflow();};
+        _viewport.SizeChanged+=(_,_)=>Reflow();Shown+=(_,_)=>{Reflow();if(_preview)_status.Text="界面预览";};FormClosing+=(_,e)=>{if(_busy&&e.CloseReason!=CloseReason.WindowsShutDown)e.Cancel=true;};
     }
-    protected override void OnHandleCreated(EventArgs e){base.OnHandleCreated(e);int value=1;DwmSetWindowAttribute(Handle,20,ref value,sizeof(int));}
-    [DllImport("dwmapi.dll")]private static extern int DwmSetWindowAttribute(IntPtr window,int attr,ref int value,int size);
-    private void BuildBody()
+    string StartText=>_repairMode?"开始修复":_install?(_componentOnly?"准备组件":"立即安装"):"卸载并清理";
+    void BuildBody()
     {
-        if(_repairMode)
+        var intro=Appearance.Card(_body,_repairMode?"保留个人设置":_install?"一次安装，自动准备":"卸载范围");
+        Appearance.Add(intro,Appearance.Label(_repairMode?"检查程序文件、驱动与白名单；修复过程保留手感、键位和音频。":_install?"自动准备必要组件，并在软件目录提供修复工具和卸载入口。":"清理程序、个人设置和两项共享驱动；共享驱动也可能被其他手柄软件使用。",10));
+        if(!_install)Appearance.Add(intro,Appearance.Label("需要保留个人设置或共享驱动，可展开下方卸载选项。",9));
+        if(!_repairMode)
         {
-            var repair=Appearance.Card(_body,"连接组件检查与修复");
-            Appearance.Add(repair,Appearance.Label("适用于驱动缺失、安装不完整、暂时无法调用，以及卸载后重新安装出现的连接异常。",10));
-            Appearance.Add(repair,Appearance.Label("正常的组件会复用；需要修复时请先退出转换器、游戏和模拟器。",9.5f));
-            Appearance.Add(repair,Appearance.Label("本工具保留手感、键位、授权和音频配置。完成后从桌面重新打开转换器。",9.5f));
+            _options.Text=_install?"安装选项 ▾":"卸载选项 ▾";Appearance.Add(_body,_options);_optionPanel=Appearance.Stack(new Panel());_optionPanel.Visible=false;Appearance.Add(_body,_optionPanel);
+            if(_install){Appearance.Add(_optionPanel,Appearance.Label("安装位置",10,true));Appearance.Add(_optionPanel,_path);_path.ReadOnly=_componentOnly;var choose=new WarmButton{Text="更改位置",Width=110};choose.Enabled=!_componentOnly;choose.Click+=(_,_)=>{using var picker=new FolderBrowserDialog{SelectedPath=_path.Text};if(picker.ShowDialog(this)==DialogResult.OK)_path.Text=Path.Combine(picker.SelectedPath,"CODM手柄转换器");};Appearance.Add(_optionPanel,choose);}
+            else{Appearance.Add(_optionPanel,_drivers);Appearance.Add(_optionPanel,_data);Appearance.Add(_optionPanel,Appearance.Label("个人配置删除后无法恢复。",9));}
         }
-        else if(_install)
-        {
-            var place=Appearance.Card(_body,"安装位置");var row=new TableLayoutPanel{Dock=DockStyle.Top,AutoSize=true,ColumnCount=2,Margin=new Padding(0,3,0,2)};row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,124));_path.Margin=new(0,8,10,6);row.Controls.Add(_path,0,0);row.Controls.Add(_browse,1,0);Appearance.Add(place,row);Appearance.Add(place,Appearance.Label("请使用独立子文件夹；配置不会在安装时重置。",9));
-            var items=Appearance.Card(_body,_componentOnly?"免安装包已包含":"本次安装包含");Appearance.Add(items,Appearance.Label("主程序 v"+Product.Version+"、卸载程序、必看 README.TXT、赞赏码原图。",9.5f));Appearance.Add(items,Appearance.Label("ViGEmBus：虚拟手柄输出　·　HidHide：避免实体输入与改键重复",9.5f));Appearance.Add(items,Appearance.Label(_componentOnly?"这里只准备或复用共享驱动，不移动文件、不登记应用卸载入口。":"已有就绪组件会复用。两项驱动为共享组件，卸载可能影响其他手柄软件。",9));
-            var safety=Appearance.Card(_body,"安全软件提示");var warning=Appearance.Label("本安装包与主程序尚未代码签名，可能出现未知发行者或风险提示。请核验来源、发布的 SHA256 和扫描结果；不要把所有提示都当作误报，也不要关闭系统防护。",9);warning.ForeColor=Color.FromArgb(229,191,134);Appearance.Add(safety,warning);Appearance.Add(_body,_agree);
-        }
-        else
-        {
-            var root=Appearance.Card(_body,"本次卸载位置");Appearance.Add(root,Appearance.Label(_path.Text,9));
-            var items=Appearance.Card(_body,"选择清理范围");Appearance.Add(items,_drivers);Appearance.Add(items,Appearance.Label("共享驱动也可能被其他手柄软件使用；取消勾选会明确列为保留项。",9));Appearance.Add(items,_data);Appearance.Add(items,Appearance.Label("删除后无法恢复。需要保留时先导出配置，或取消这一项。",9));
-            var verify=Appearance.Card(_body,"完成后如何确认");Appearance.Add(verify,Appearance.Label("核对程序文件、配置、驱动服务、过滤器、官方安装项与驱动包。",9.5f));Appearance.Add(verify,Appearance.Label("被占用、失败或待重启都会分别显示。需要重启时由你选择，重启后继续复查；不提前宣称完全清理。",9));
-        }
-        var status=Appearance.Card(_body,"处理状态");Appearance.Add(status,_status);Appearance.Add(status,_log);
-        if(_install&&!_repairMode)Appearance.Add(_body,Appearance.Label("喜欢这个工具？安装文件夹内有赞赏码.png，可自愿鼓励作者；不影响使用。",8.5f));
+        var result=Appearance.Card(_body,"状态");Appearance.Add(result,_status);Appearance.Add(result,_advice);Appearance.Add(result,_progress);Appearance.Add(_body,_details);
+        _detailPanel=Appearance.Stack(new Panel());_detailPanel.Visible=false;Appearance.Add(_body,_detailPanel);Appearance.Add(_detailPanel,_log);
+        var actions=new FlowLayoutPanel{Dock=DockStyle.Top,AutoSize=true,WrapContents=true};var save=new WarmButton{Text="保存记录",Width=106};save.Click+=(_,_)=>SaveLog();var guide=new WarmButton{Text="使用说明",Width=106};guide.Click+=(_,_)=>{using var f=new Form{Text="使用说明",Size=new Size(700,560),StartPosition=FormStartPosition.CenterParent};f.Controls.Add(new RichTextBox{Dock=DockStyle.Fill,ReadOnly=true,Text=_readme,BackColor=Appearance.Surface,ForeColor=Appearance.Text});f.ShowDialog(this);};var restartButton=new WarmButton{Text="重启电脑…",Width=114};restartButton.Click+=(_,_)=>{if(!_busy&&MessageBox.Show(this,"请先保存其他工作。确认后请求 Windows 正常重启。","重启电脑",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)==DialogResult.Yes)_restart();};actions.Controls.Add(save);actions.Controls.Add(guide);actions.Controls.Add(restartButton);Appearance.Add(_detailPanel,actions);
+        Appearance.Add(_detailPanel,Appearance.Label("安装位置："+_path.Text+"\n两项驱动为共享组件。主程序与安装器尚未代码签名，请核验发布来源与校验值。",9));
     }
-    private void Reflow()
-    {
-        if(_body==null)return;_body.Width=Math.Max(1,_viewport.ClientSize.Width-_viewport.Padding.Horizontal-SystemInformation.VerticalScrollBarWidth);
-        void Fit(Control parent){foreach(Control child in parent.Controls){if(child is Label {AutoSize:true}||child is CheckBox {AutoSize:true})child.MaximumSize=new(Math.Max(80,parent.ClientSize.Width-parent.Padding.Horizontal-child.Margin.Horizontal),0);Fit(child);}}
-        Fit(_body);_body.PerformLayout();
-    }
-    public void UpdateProgress(Update update)
-    {
-        if(IsDisposed)return;if(InvokeRequired){BeginInvoke(()=>UpdateProgress(update));return;}
-        for(int i=0;i<_steps.Length;i++)_steps[i].ForeColor=i==update.Step?Appearance.Accent:Appearance.Muted;
-        _status.Text=update.Text;_log.AppendText(((_log.TextLength>0)?Environment.NewLine:"")+update.Text);_log.SelectionStart=_log.TextLength;_log.ScrollToCaret();Reflow();if(_busy)_viewport.ScrollControlIntoView(_status);
-    }
-    private async Task Execute()
+    void Reflow(){if(_body==null)return;_body.Width=Math.Max(1,_viewport.ClientSize.Width-_viewport.Padding.Horizontal-SystemInformation.VerticalScrollBarWidth);void Fit(Control p){foreach(Control c in p.Controls){if(c is Label {AutoSize:true}||c is CheckBox {AutoSize:true})c.MaximumSize=new Size(Math.Max(100,p.ClientSize.Width-p.Padding.Horizontal-c.Margin.Horizontal),0);Fit(c);}}Fit(_body);_body.PerformLayout();}
+    public void UpdateProgress(Update u){if(IsDisposed)return;if(InvokeRequired){BeginInvoke(()=>UpdateProgress(u));return;}_log.AppendText((_log.TextLength>0?Environment.NewLine:"")+u.Text);_status.Text=u.Step==0?"正在检查，请稍候…":u.Step==2?"正在核对结果…":_repairMode?"正在修复，请稍候…":_install?"正在安装，请稍候…":"正在清理，请稍候…";}
+    async Task Execute()
     {
         if(_busy||_preview)return;
-        if(_outcome!=null)
-        {
-            if(_repairMode&&(_outcome.ReadyToLaunch||_outcome.MaintenanceBlocked)){Close();return;}
-            if(_outcome.RestartRequired){if(MessageBox.Show(this,"请先保存其他工作。确认后请求 Windows 在30秒后正常重启，不强制结束应用。","立即重启？",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)==DialogResult.Yes&&!_restart())MessageBox.Show(this,"未能请求重启，请稍后手动重启。","重启提示");return;}
-            if(_install&&(_outcome.ReadyToLaunch||(!_componentOnly&&_outcome.FilesInstalled))){try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(_path.Text,Product.MainName)){UseShellExecute=true});Close();}catch(Exception ex){MessageBox.Show(this,ex.Message);}return;}
-            if(_componentOnly&&!_repairMode&&_outcome.Success)
-            {
-                _busy=true;_primary.Enabled=false;_close.Enabled=false;
-                try{var state=await CODMControllerProbe.ComponentProbe.WaitAsync(_path.Text);_outcome.ReadyToLaunch=state.Ready;_outcome.RestartRequired=state.NeedsRestart;_outcome.Summary=state.Ready?"组件可以正常调用，可以开始使用":state.Message;_outcome.Details=state.Details.ToList();ShowResult(_outcome);}
-                finally{_busy=false;_primary.Enabled=true;_close.Enabled=true;}
-                return;
-            }
-        }
-        if(!_install&&MessageBox.Show(this,"将按勾选项移除程序、共享驱动和个人配置。请确认已备份需要保留的内容。","确认卸载",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes)return;
-        _busy=true;_log.Visible=true;foreach(Control control in new Control[]{_primary,_close,_agree,_path,_browse,_drivers,_data,_read})control.Enabled=false;
-        try{_outcome=await _run(_path.Text,_drivers.Checked,_data.Checked);ShowResult(_outcome);}
-        catch(Exception ex){ShowResult(new Outcome{Summary="操作未完成："+ex.Message});}
-        finally{_busy=false;_primary.Enabled=true;_close.Enabled=true;_read.Enabled=true;if(_outcome==null||(!_outcome.Success&&!_outcome.RestartRequired)){foreach(Control c in new Control[]{_agree,_path,_browse,_drivers,_data})c.Enabled=true;_primary.Enabled=_repairMode||!_install||_agree.Checked;}}
+        if(_outcome?.RestartRequired==true||(_repairMode&&_outcome?.ReadyToLaunch==true)||(!_install&&_outcome?.Success==true)){Close();return;}
+        if(_install&&!_repairMode&&_outcome?.ReadyToLaunch==true){try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(_path.Text,Product.MainName)){UseShellExecute=true});Close();}catch(Exception ex){_status.Text="无法启动软件："+ex.Message;}return;}
+        _busy=true;_primary.Enabled=false;_close.Enabled=false;_path.Enabled=false;_drivers.Enabled=false;_data.Enabled=false;_progress.Visible=true;
+        try{ShowResult(await _run(_path.Text,_drivers.Checked,_data.Checked));}catch(Exception ex){ShowResult(new Outcome{Summary="操作未完成："+ex.Message});}
+        finally{_busy=false;_primary.Enabled=true;_close.Enabled=true;_path.Enabled=true;_drivers.Enabled=true;_data.Enabled=true;_progress.Visible=false;}
     }
-    public void ShowResult(Outcome result)
+    public void ShowResult(Outcome r)
     {
-        _outcome=result;_log.Visible=!result.Success||result.RestartRequired||result.HasWarnings||(_install&&!result.ReadyToLaunch)||result.Retained.Count>0;_status.Text=result.Summary;_status.ForeColor=result.Success&&(!_install||result.ReadyToLaunch)&&!result.RestartRequired&&!result.HasWarnings?Color.FromArgb(103,207,158):Color.FromArgb(244,173,111);
-        _log.Text=string.Join(Environment.NewLine,_log.Lines.Concat(result.Details).Concat(result.Retained).Where(line=>line.Length>0).Distinct());
-        if(result.RestartRequired){_primary.Text="立即重启";_close.Text="稍后重启";_primary.Visible=true;}
-        else {_primary.Text=_install&&(result.Success||result.FilesInstalled)?(result.ReadyToLaunch||(!_componentOnly&&result.FilesInstalled)?"启动软件":"重新检查"):"重试";_primary.Visible=_install||!result.Success;_close.Text="完成";}
-        if(_repairMode&&!result.RestartRequired){_primary.Text=result.ReadyToLaunch||result.MaintenanceBlocked?"完成":"开始修复";_primary.Visible=true;}
-        CleanupCachesOnClose=!_install&&result.Success&&!result.RestartRequired;_logs.Text=_log.Visible?"保存记录":"查看记录";Reflow();_viewport.ScrollControlIntoView(_status);
-        if(!_busy){_primary.Enabled=_repairMode||result.Success||result.FilesInstalled||result.RestartRequired||!_install||_agree.Checked;_close.Enabled=true;}
+        _outcome=r;_advice.Text=RecoveryAdvice.For(r);_repairAction.Visible=!r.Success&&!r.RestartRequired&&File.Exists(Path.Combine(_path.Text,LocalRecovery.RepairExe));
+        _status.Text=!r.Success&&!r.RestartRequired?(_repairMode?"修复尚未完成":_install?"安装尚未完成":"清理尚未完成"):r.RestartRequired?"已处理可完成的项目。Windows 尚需一次重启，请保存工作后手动重启。":r.Summary;
+        _status.ForeColor=r.Success&&!r.RestartRequired?Color.FromArgb(103,207,158):Color.FromArgb(244,173,111);
+        _log.Text=string.Join(Environment.NewLine,_log.Lines.Append(r.Summary).Concat(r.Details).Concat(r.Retained).Where(s=>s.Length>0).Distinct());
+        _primary.Text=r.RestartRequired?"完成":_repairMode?(r.ReadyToLaunch?"完成":"开始修复"):_install?(r.ReadyToLaunch?"完成并打开":"重试安装"):(r.Success?"完成":"重试清理");_close.Text="关闭";
+        CleanupCachesOnClose=!_install&&r.Success&&!r.RestartRequired;
+        if(!r.Success&&!_detailPanel.Visible)_details.Text="查看失败原因与详细记录 ▾";
+        if(!_busy){_primary.Enabled=true;_close.Enabled=true;}Reflow();
     }
-    public void SetRepairChecking(){_primary.Enabled=false;UpdateProgress(new(0,"正在检查连接组件…"));}
-    private void ShowReadme()
-    {
-        foreach(Control c in _document.Controls.Cast<Control>().ToArray())c.Dispose();_document.Controls.Clear();var text=new RichTextBox{Dock=DockStyle.Fill,ReadOnly=true,BorderStyle=BorderStyle.None,BackColor=Appearance.Surface,ForeColor=Appearance.Text,Font=new Font("Microsoft YaHei UI",9.5f),Text=_readme,DetectUrls=false};_document.Controls.Add(text);_viewport.Visible=false;_document.Visible=true;_document.BringToFront();foreach(var b in new[]{_primary,_close,_read,_logs})b.Visible=false;_back.Visible=true;
-    }
-    private void HideReadme(){_document.Visible=false;_viewport.Visible=true;_back.Visible=false;foreach(var b in new[]{_primary,_close,_read,_logs})b.Visible=true;if(_outcome!=null)ShowResult(_outcome);}
-    private void SaveLog(){using var save=new SaveFileDialog{FileName=Product.Name+(_install?"-安装记录.txt":"-卸载记录.txt"),Filter="文本记录|*.txt"};if(save.ShowDialog(this)==DialogResult.OK)File.WriteAllText(save.FileName,_log.Text,new System.Text.UTF8Encoding(true));}
+    public void SetRepairChecking(){_primary.Enabled=false;_status.Text="正在检查，请稍候…";}
+    void SaveLog(){using var save=new SaveFileDialog{FileName="CODM-"+(_repairMode?"修复":_install?"安装":"卸载")+"记录.txt",Filter="文本记录|*.txt"};if(save.ShowDialog(this)==DialogResult.OK)File.WriteAllText(save.FileName,_log.Text,new System.Text.UTF8Encoding(true));}
     public void SetCleanupChoices(bool drivers,bool data){_drivers.Checked=drivers;_data.Checked=data;}
-    public void ScalePreviewFonts(float factor){var fonts=new List<(Control Control,Font Font)>();void Capture(Control c){fonts.Add((c,c.Font));foreach(Control child in c.Controls)Capture(child);}Capture(this);foreach(var item in fonts)item.Control.Font=new Font(item.Font.FontFamily,item.Font.Size*factor,item.Font.Style);Reflow();}
+    public void ScalePreviewFonts(float factor){Font=new Font(Font.FontFamily,Font.Size*factor);Reflow();}
 }

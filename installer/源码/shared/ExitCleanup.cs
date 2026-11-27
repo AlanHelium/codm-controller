@@ -43,7 +43,7 @@ public static class ExitCleanup
             Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop
           }
           if ($withCaches -eq '1') {
-            foreach ($name in @('CODMControllerProbe','CODMControllerProbeSetup','CODMControllerProbeUninstaller')) {
+            foreach ($name in @('CODMControllerProbe','CODMControllerProbeSetup','CODMControllerProbeUninstaller','修复工具','卸载程序')) {
               $cache=[IO.Path]::GetFullPath([IO.Path]::Combine($cleanupBase,'.net',$name))
               if ($cache.StartsWith([IO.Path]::Combine($cleanupBase,'.net')+'\',[StringComparison]::OrdinalIgnoreCase)) { try { Remove-OwnedFolder $cache } catch {} }
             }

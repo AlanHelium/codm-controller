@@ -23,6 +23,12 @@ static class Program
             File.WriteAllText(args[1],System.Text.Json.JsonSerializer.Serialize(state,new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
             return;
         }
+        if(args.Length==2&&args[0]=="--repair-access-report")
+        {
+            var access=IsolationProbe.Capture(Array.Empty<string>(),requireVirtual:false);
+            File.WriteAllText(args[1],System.Text.Json.JsonSerializer.Serialize(access));
+            return;
+        }
         UiPreview.Enabled = args.Contains("--ui-preview");
         if (IsolationProbe.HandleArguments(args)) return;
         // 启动轨迹：单文件版真机崩溃定位（写公共目录，管理员 TEMP 不混淆）

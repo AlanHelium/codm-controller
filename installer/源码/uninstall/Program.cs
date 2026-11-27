@@ -7,8 +7,9 @@ internal static class Program
 {
     [STAThread]static void Main(string[] args)
     {
+        if(CODMControllerProbe.IsolationProbe.HandleArguments(args))return;
         ApplicationConfiguration.Initialize();
-        bool repair=args.Contains("--repair")||string.Equals(Path.GetFileName(Environment.ProcessPath),"CODMControllerRepair.exe",StringComparison.OrdinalIgnoreCase)
+        bool repair=string.Equals(Path.GetFileName(Environment.ProcessPath),LocalRecovery.RepairExe,StringComparison.OrdinalIgnoreCase)||args.Contains("--repair")||string.Equals(Path.GetFileName(Environment.ProcessPath),"CODMControllerRepair.exe",StringComparison.OrdinalIgnoreCase)
             ||(!File.Exists(Path.Combine(AppContext.BaseDirectory,Product.RecordName))&&File.Exists(Path.Combine(AppContext.BaseDirectory,ComponentRepair.KitManifest)));
         try
         {
@@ -67,7 +68,7 @@ internal static class Program
             }
             finally{ExitCleanup.Start(temp,cleanCaches);}
         }
-        catch(Exception ex){MessageBox.Show((repair?"未执行连接修复：":"未执行卸载：")+ex.Message+"\n请从完整的安装目录或修复包启动。",repair?"连接修复提示":"卸载提示",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
+        catch(Exception ex){MessageBox.Show((repair?"未执行连接修复：":"未执行卸载：")+ex.Message+"\n请从完整的安装目录或修复包启动。",repair?"修复提示":"卸载提示",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
     }
     static bool WaitForPreviousProcess(string[] args)
     {

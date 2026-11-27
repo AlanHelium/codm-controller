@@ -18,10 +18,16 @@ public sealed class ChangelogForm : Form
     // 条目顺序 = 时间倒序（最新在前）。新增版本时在数组最前面插入一条。
     private static readonly Entry[] Entries =
     {
-        new("v3.5.15", "普通正式版 · 功能与连接维护更新",
+        new("v3.5.18", "输入方式可切换 · 游戏更新后按键失效时用",
+            "新增五种键盘注入方式：窗口消息直投主窗口、窗口消息投渲染子窗口、系统模拟扫描码、系统模拟虚拟键、双通道同时发。设置页实验区最上方可随时切换，切完立即生效并保存，下次启动沿用；切换时自动释放已按住的键，避免游戏里卡键。系统模拟只在游戏处于前台时发送，不会误操作桌面。WASD 移动走独立通道，不受影响。",
+            "游戏更新后旧的按键通道可能失效，由使用者实测挑选可用通道，比统一猜测更可靠。",
+            "v3.5.18", "Switchable key delivery for post-update key failures",
+            "Add five keyboard delivery methods: posted window messages to the main window or the render child window, synthesized scan codes, synthesized virtual keys, and both at once. Switch live from the top of the experimental page; the choice takes effect immediately, is saved, releases held keys on switch, and only sends synthesized input while the game is in the foreground.",
+            "Let the user test which channel survives a game update instead of guessing one for everyone."),
+        new("v3.5.18", "普通正式版 · 功能与连接维护更新",
             "更新一屏总览、矢量窗口按钮与运行光效；补齐单键、双键组合、长按开关、Home读取及音频提示修复。设置显示版本号，新增连接修复入口及独立修复包；核对实际驱动状态，复用健康组件，保留配置，不自动重启。",
             "统一通用功能，简化连接维护和使用入口。",
-            "v3.5.15", "Standard release and connection maintenance",
+            "v3.5.18", "Standard release and connection maintenance",
             "Refine overview and window controls; include mapping, hold and audio fixes. Add version details and connection repair, reuse healthy drivers and preserve settings without automatic restart.",
             "Keep common functions and maintenance accessible."),
         new(

@@ -316,6 +316,8 @@ public partial class MainForm : Form
             _map.Lethal = s.MapLethal;
             _comboMask = (ushort)(s.ComboMask == 0 ? 0x00C0 : s.ComboMask);
             _cursorSwitchMode = s.CursorSwitchMode is 0 or 1 ? s.CursorSwitchMode : 0;
+            _inputChannel = InputChannel.Valid(s.InputChannel) ? s.InputChannel : 0;
+            KeyInjection.Channel = _inputChannel;
             LoadButtonAudio(s);
             _voiceMode = s.VoiceMode is >= VoicePlayer.Off and <= VoicePlayer.Human
                 ? s.VoiceMode
@@ -391,7 +393,7 @@ public partial class MainForm : Form
             _fineTuneGains = s.FineTuneGains is { Length: 6 } ? s.FineTuneGains : new[] { 1f, 1f, 1f, 1f, 1f, 1f };
             ApplyVersionedCurves(s); // 按版本档位重建曲线（免费/高级=出厂×档位，Pro=自定义）
             // 会话起点留痕：下次测试日志第一行即可确认运行版本与关键开关，避免"旧进程没退干净/跑错版本"争议。
-            TestLog.Add($"会话启动: 版本=v3.5.15 交换肩键扳机={_swapShoulderTriggers} WASD移动={_expWasdMove} 映射区绑定={_padKeyMap.Count} 条");
+            TestLog.Add($"会话启动: 版本=v3.5.18 交换肩键扳机={_swapShoulderTriggers} WASD移动={_expWasdMove} 映射区绑定={_padKeyMap.Count} 条 输入方式={_inputChannel+1}");
         }
         catch { /* 设置加载失败使用出厂默认 */ }
     }
@@ -418,6 +420,8 @@ public partial class MainForm : Form
         _map.Lethal = d.MapLethal;
         _comboMask = (ushort)(d.ComboMask == 0 ? 0x00C0 : d.ComboMask);
         _cursorSwitchMode = d.CursorSwitchMode is 0 or 1 ? d.CursorSwitchMode : 0;
+        _inputChannel = InputChannel.Valid(d.InputChannel) ? d.InputChannel : 0;
+        KeyInjection.Channel = _inputChannel;
         _voiceMode = d.VoiceMode;
         LoadButtonAudio(d);
         _holdProneDelayMs = d.HoldProneDelayMs;
@@ -457,7 +461,7 @@ public partial class MainForm : Form
         _fineTuneGains = d.FineTuneGains;
         ReplaceKeyboardBindings(Array.Empty<PadKeyBind>());
         _expRsCombo = false;
-        _keyboardChords.Clear();_keyboardChordsEnabled=false;_experimentalCursorEnabled=false;_legacyCursorTouchpad=false;_cursorSwitchMode=0;PublishMappingSnapshots();
+        _keyboardChords.Clear();_keyboardChordsEnabled=false;_experimentalCursorEnabled=false;_legacyCursorTouchpad=false;_cursorSwitchMode=0;_inputChannel=0;KeyInjection.Channel=0;PublishMappingSnapshots();
         _fireModeEnabled = false;
         _fireModeHoldMs = 250;
         _fireModeUseCombo = true;
@@ -626,6 +630,7 @@ public partial class MainForm : Form
             MapLethal = _map.Lethal,
             ComboMask = _comboMask,
             CursorSwitchMode = _cursorSwitchMode,
+            InputChannel = _inputChannel,
             VoiceMode = _voiceMode,
             AudioCursorToggle = _audioCursorToggle,
             AudioTriggerButtons = _audioTriggerButtons.ToList(),
@@ -3376,7 +3381,7 @@ public partial class MainForm : Form
                 _fireModeCombo = mask;
                 _fireModeWasDown = _fireModeSent = false;
                 MappingEdited(()=>{});
-            }, initialSection:section,onReport:()=>MountStudioForm(new DiagnosticForm(BuildDiagnosticReport)),movementStatus:WasdLiveStatus,mappingStatus:()=>_gameKeys.MappingStatus(),onCleanup:()=>{Close();UninstallDrivers();},keyboardChordsEnabled:_keyboardChordsEnabled,keyboardChords:_keyboardChords.Select(c=>c.Normalize()!).ToList(),onKeyboardChords:SetKeyboardChords,experimentalCursorEnabled:_experimentalCursorEnabled,experimentalCursorKey:_experimentalCursorKey,onExperimentalCursor:SetExperimentalCursor,confirmKeyboardBindings:ConfirmKeyboardBindings,captureChanged:SetMappingCapture,readKeyboardChords:()=>{lock(_keyboardBindingGate)return(_keyboardChordsEnabled,_keyboardChords.Select(c=>c.Normalize()!).ToList());},readShortcut:ReadPadShortcut,onShortcut:SetPadShortcut,readPhysical:ReadPhysicalCapture,readHolds:ReadHoldOptions,onHoldEnabled:SetHoldEnabled,readRun:()=>_enableRun,onBrandSettings:BrandSettingsAction,onUpdate:UpdateAction,onRepair:OpenConnectionRepair);
+            }, initialSection:section,onReport:()=>MountStudioForm(new DiagnosticForm(BuildDiagnosticReport)),movementStatus:WasdLiveStatus,mappingStatus:()=>_gameKeys.MappingStatus(),onCleanup:()=>{Close();UninstallDrivers();},keyboardChordsEnabled:_keyboardChordsEnabled,keyboardChords:_keyboardChords.Select(c=>c.Normalize()!).ToList(),onKeyboardChords:SetKeyboardChords,experimentalCursorEnabled:_experimentalCursorEnabled,experimentalCursorKey:_experimentalCursorKey,onExperimentalCursor:SetExperimentalCursor,confirmKeyboardBindings:ConfirmKeyboardBindings,captureChanged:SetMappingCapture,readKeyboardChords:()=>{lock(_keyboardBindingGate)return(_keyboardChordsEnabled,_keyboardChords.Select(c=>c.Normalize()!).ToList());},readShortcut:ReadPadShortcut,onShortcut:SetPadShortcut,readPhysical:ReadPhysicalCapture,readHolds:ReadHoldOptions,onHoldEnabled:SetHoldEnabled,readRun:()=>_enableRun,onBrandSettings:BrandSettingsAction,onUpdate:UpdateAction,onRepair:OpenConnectionRepair,inputChannel:_inputChannel,onInputChannel:SetInputChannel);
         form.PrepareForStudio(section, (child,title) => MountStudioForm(child,title));
         MountStudioForm(form,StudioSections[Math.Clamp(section+1,1,7)],root:true);
         RefreshSensArea(); // 设置窗口里改的档位/趴下 → 主界面总结行同步
@@ -3451,7 +3456,7 @@ public partial class MainForm : Form
     /// <summary>一键诊断：驱动/隐藏/手柄/音频 四个状态灯 + 修复提示，砍掉 80% 售后问题。</summary>
     private void OpenDiag()
     {
-        var form = new DiagForm(CaptureStartupDiagnosticsAsync,StartConversion,()=>MountStudioForm(new GuideForm()));
+        var form = new DiagForm(CaptureStartupDiagnosticsAsync,StartConversion,()=>MountStudioForm(new GuideForm()),OpenConnectionRepair);
         MountStudioForm(form);
     }
 

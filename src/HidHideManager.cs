@@ -389,7 +389,7 @@ public static class HidHideManager
         finally { CloseHandle(h); }
     }
 
-    private static bool SetInverse(bool inverse)
+    public static bool SetInverse(bool inverse)
     {
         var h = Open();
         if (h == new IntPtr(-1)) return false;

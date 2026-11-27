@@ -143,19 +143,25 @@ public static class Drivers
         var result=new DriverOutcome();
         foreach(var d in Packages)
         {
-            if(RemovalPending(d.Name)){result.Reboot=true;log(d.Name+" 上次移除仍待重启，请重启后再安装");break;}
-            var before=Inspect(d.Name);if(before.Ready){log(d.Name+" 已安装，复用已有组件；稍后检查能否调用");result.States.Add(before);continue;}
+            try
+            {
+            if(RemovalPending(d.Name)){result.Reboot=true;log(d.Name+" 上次移除仍待重启，请重启后再安装");continue;}
+            int priorProblems=result.Problems.Count;var before=Inspect(d.Name);var probe=CODMControllerProbe.ComponentProbe.Capture();var runtime=d.Name=="HidHide"?probe.HidHide:probe.Vigem;
+            if(runtime.Error.Contains("[Win32=5]")||runtime.Error.Contains("[Win32=32]")){result.Success=false;result.Problems.Add(d.Name+" 控制通道访问受阻："+runtime.Error);log(result.Problems[^1]);continue;}
+            if(before.Ready&&runtime.RuntimeReady){log(d.Name+" 已安装，复用已有组件；稍后检查能否调用");result.States.Add(before);continue;}
             string vendor=SafeFiles.Child(root,"components/"+d.File);VerifyVendor(vendor,d);
-            string logfile=Path.Combine(root,d.Name+"-install.log");log("正在安装或修复 "+d.Name);
+            string logRoot=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CODMControllerProbe","maintenance","driver-logs");Directory.CreateDirectory(logRoot);
+            string logfile=Path.Combine(logRoot,d.Name+"-"+DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff")+"-"+Guid.NewGuid().ToString("N")+".log");log("官方安装日志："+logfile);log("正在安装或修复 "+d.Name);
             int code;
             if(before.Products.Count>0)
-                code=await WindowsIntegration.Run(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"msiexec.exe"),["/fa",before.Products[0],"/qn","/norestart","REBOOT=ReallySuppress","/L*v",logfile],log);
+                code=await RunInstall(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"msiexec.exe"),["/fa",before.Products[0],"/qn","/norestart","REBOOT=ReallySuppress","/L*v",logfile],log);
             else
-                code=await WindowsIntegration.Run(vendor,["/exenoui","/qn","/norestart","REBOOT=ReallySuppress","/L*v",logfile],log);
+                code=await RunInstall(vendor,["/exenoui","/qn","/norestart","REBOOT=ReallySuppress","/L*v",logfile],log);
+            if(code is 1612 or 1706 or 1605){log(d.Name+" Windows Installer源文件/缓存异常，尝试已校验的完整官方安装包");code=await RunInstall(vendor,["/exenoui","/qn","/norestart","REBOOT=ReallySuppress","/L*v",logfile+"-bundle.log"],log);}
             result.Reboot|=ExitPolicy.Reboot(code);
-            if(!ExitPolicy.Success(code)){result.Success=false;result.Problems.Add(d.Name+" 安装未完成（"+code+"）");break;}
+            if(!ExitPolicy.Success(code)){result.Success=false;result.Problems.Add(d.Name+" 安装未完成（"+code+"）："+InstallerHint(code)+"；日志："+logfile);log(result.Problems[^1]);continue;}
             var after=await WaitReady(d.Name);
-            if(!after.Ready&&!result.Reboot&&before.Products.Count>0)
+            if((!after.Ready||!(d.Name=="HidHide"?CODMControllerProbe.ComponentProbe.Capture().HidHide.RuntimeReady:CODMControllerProbe.ComponentProbe.Capture().Vigem.RuntimeReady))&&!result.Reboot&&before.Products.Count>0)
             {
                 // A repair may restore MSI registration without recreating a
                 // missing root device. Reinstall only this official component.
@@ -166,7 +172,7 @@ public static class Drivers
                     result.Reboot|=ExitPolicy.Reboot(removed);
                     if(!ExitPolicy.Success(removed)&&removed!=1605){result.Success=false;result.Problems.Add(d.Name+" 重新安装前清理未完成（"+removed+"）");break;}
                 }
-                if(result.Success&&!result.Reboot&&!RemovalPending(d.Name))
+                if(result.Problems.Count==priorProblems&&!result.Reboot&&!RemovalPending(d.Name))
                 {
                     int installed=await WindowsIntegration.Run(vendor,["/exenoui","/qn","/norestart","REBOOT=ReallySuppress","/L*v",logfile],log);
                     result.Reboot|=ExitPolicy.Reboot(installed);
@@ -176,10 +182,15 @@ public static class Drivers
                 else if(RemovalPending(d.Name))result.Reboot=true;
             }
             result.States.Add(after);log(d.Name+"："+after.Summary);
-            if(!after.Ready&&!result.Reboot){result.Success=false;result.Problems.Add(d.Name+" 未通过组件就绪检查");break;}
-            if(!result.Success||result.Reboot)break;
+            if(!after.Ready&&!result.Reboot){result.Success=false;result.Problems.Add(d.Name+" 未通过组件就绪检查："+after.Summary);}
+            }catch(Exception ex){result.Success=false;result.Problems.Add(d.Name+"："+ex.GetType().Name+"："+ex.Message);log(result.Problems[^1]);}
         }
         return result;
+    }
+    static string InstallerHint(int code)=>code switch{1618=>"Windows正在进行其他安装，请稍后重试",1612 or 1706=>"Windows Installer的安装源或缓存缺失",1603=>"官方安装器失败，需要查看详细日志中的Return value 3附近原因",1638=>"已存在另一版本的官方组件",_=>"官方安装器返回失败"};
+    static async Task<int> RunInstall(string exe,IEnumerable<string> args,Action<string> log)
+    {
+        for(int attempt=0;;attempt++){int code=await WindowsIntegration.Run(exe,args,log);if(code!=1618||attempt>=2)return code;log("Windows其他安装占用，等待后自动重试（"+(attempt+1)+"/2）");await Task.Delay(5000);}
     }
     static async Task<DriverState> WaitReady(string name)
     {

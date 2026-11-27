@@ -10,7 +10,7 @@ public sealed class SetupRunner(Action<Update> progress)
     public async Task<Outcome> Run(string input)
     {
         var outcome=new Outcome();string root="";string? shortcutWarning=null;
-        void Log(string text){progress(new(1,text));if(root.Length>0&&Directory.Exists(root))File.AppendAllText(Path.Combine(root,"install.log"),text+Environment.NewLine);}
+        void Log(string text){outcome.Details.Add(text);progress(new(1,text));if(root.Length>0&&Directory.Exists(root))try{File.AppendAllText(Path.Combine(root,"install.log"),text+Environment.NewLine);}catch{}}
         try
         {
             progress(new(0,"检查安装位置、运行中的程序和包内文件"));
@@ -39,12 +39,15 @@ public sealed class SetupRunner(Action<Update> progress)
                     using var read=File.OpenRead(file);if(Convert.ToHexString(SHA256.HashData(read))!=payload.Hash)throw new IOException("文件校验失败："+payload.Name);
                 }
                 var record=new InstallRecord{Root=root,DriversPreviouslyPresent=Drivers.Packages.ToDictionary(d=>d.Name,d=>Drivers.Inspect(d.Name).Ready),ComponentRestartRequired=prior?.ComponentRestartRequired==true&&CODMControllerProbe.ComponentProbe.SameBoot(prior.ComponentPreparedBoot,CODMControllerProbe.ComponentProbe.BootStamp),ComponentPreparedBoot=prior?.ComponentPreparedBoot??0};
-                Directory.CreateDirectory(root);record.Save();
-                foreach(var payload in payloads){string to=SafeFiles.Child(root,payload.Name);Directory.CreateDirectory(Path.GetDirectoryName(to)!);File.Copy(SafeFiles.Child(staging,payload.Name),to,true);Log("已复制文件："+payload.Name);}
+                Directory.CreateDirectory(root);using var transaction=new UpgradeTransaction(root,Log);transaction.Capture(Product.RecordName);transaction.Capture(RepairFiles.Manifest);if(prior!=null)WindowsIntegration.CancelCleanup(prior);record.Save();
+                foreach(var payload in payloads){string to=SafeFiles.Child(root,payload.Name);Directory.CreateDirectory(Path.GetDirectoryName(to)!);transaction.Replace(SafeFiles.Child(staging,payload.Name),payload.Name);Log("已复制文件："+payload.Name);}
+                SafeFiles.WriteAtomic(SafeFiles.Child(root,RepairFiles.Manifest),JsonSerializer.Serialize(payloads.Select(p=>new PortableFile(p.Name,p.Hash)),Product.Json));
+                LocalRecovery.Install(staging,root,payloads.Select(p=>new PortableFile(p.Name,p.Hash)),transaction);Log("已准备修复工具.exe、卸载程序.exe及本地恢复文件");
                 WindowsIntegration.Register(record);Log("已注册系统卸载入口");
                 shortcutWarning=UnicodeShortcut.TryCreate(root,Product.MainName,Product.Shortcut);
                 if(shortcutWarning==null)Log("已创建开始菜单快捷方式");
                 else{outcome.HasWarnings=true;outcome.Details.Add(shortcutWarning);Log(shortcutWarning+" 软件文件与驱动安装将继续。");}
+                transaction.Commit();
             }
             finally{SafeFiles.DeleteOwnedTree(staging,staging);}
             outcome.FilesInstalled=true;
@@ -54,14 +57,16 @@ public sealed class SetupRunner(Action<Update> progress)
             installed.ComponentRestartRequired=drivers.Reboot||(installed.ComponentRestartRequired&&CODMControllerProbe.ComponentProbe.SameBoot(installed.ComponentPreparedBoot,CODMControllerProbe.ComponentProbe.BootStamp));installed.ComponentPreparedBoot=CODMControllerProbe.ComponentProbe.BootStamp;installed.Save();
             progress(new(1,"检查驱动接口，等待 Windows 完成初始化"));
             var readiness=await CODMControllerProbe.ComponentProbe.WaitAsync(root);outcome.RestartRequired|=readiness.NeedsRestart;outcome.ReadyToLaunch=drivers.Success&&readiness.Ready;
+            outcome.Success=outcome.ReadyToLaunch||outcome.RestartRequired;
             outcome.Details.Add(readiness.Message);
             outcome.Details.AddRange(readiness.Details);
             string action=prior!=null?"软件更新完成":"软件安装完成";
             outcome.Summary=!drivers.Success?action+"；驱动准备未完成，请查看具体记录":outcome.RestartRequired?action+"；Windows 尚有组件更新待完成，可稍后重启":outcome.ReadyToLaunch?action+"，可以开始使用":action+"；"+string.Join("、",new[]{readiness.Vigem,readiness.HidHide}.Where(s=>!s.RuntimeReady).Select(s=>s.Name))+" 暂时无法调用，可打开软件查看诊断";
+            if(outcome.ReadyToLaunch){var isolation=await IsolationRepair.Run(root,Log,verifyHardware:false);outcome.HasWarnings|=isolation.Pending;outcome.ReadyToLaunch=isolation.Success;outcome.Success=isolation.Success;outcome.Details.Add(isolation.Message);outcome.Summary=isolation.Success?action+"；"+isolation.Message:"程序文件已安装，输入隔离尚未就绪："+isolation.Message;}
             if(shortcutWarning!=null)outcome.Summary+="；开始菜单快捷方式未创建，请从安装目录打开软件";
             progress(new(2,outcome.Summary));
         }
-        catch(Exception ex){outcome.Summary="安装未完成："+ex.Message;outcome.Details.Add(ex.Message);progress(new(2,outcome.Summary));}
+        catch(Exception ex){outcome.Success=false;outcome.ReadyToLaunch=false;outcome.Summary="安装未完成："+ex.Message;outcome.Details.Add(ex.Message);progress(new(2,outcome.Summary));}
         return outcome;
     }
 }

@@ -11,12 +11,23 @@ public partial class MainForm
     private PadKeyBind[] _keyboardBindings=Array.Empty<PadKeyBind>();
     private bool _wasdShiftDesired;
     private float _wasdMagnitudePercent;
+    private int _inputChannel;
     private string WasdLiveStatus()=>!_running?Lang.T("启动转换后显示实际推幅与冲刺状态","Start conversion to see stick travel and sprint state"):Lang.T($"当前推幅 {_wasdMagnitudePercent:0}% · 外圈冲刺 {(_wasdShiftDown?"已触发":"未触发")}",
         $"Stick {_wasdMagnitudePercent:0}% · sprint {(_wasdShiftDown?"active":"inactive")}");
     private GameKeyboardRouter CreateGameKeyRouter()=>new(
         ()=>ReadGameKeyTarget(FindGameWindow(_gameProcId)),
-        (target,key,down)=>PostGameKey(target,key,down),
-        IsGameKeyTargetAlive,TestLog.Add,repeat:(target,key)=>PostGameKey(target,key,true,repeat:true));
+        (target,key,down)=>KeyInjection.Send(target,key,down),
+        IsGameKeyTargetAlive,TestLog.Add,repeat:(target,key)=>KeyInjection.Send(target,key,true,repeat:true));
+    /// <summary>切换键盘注入方式（0~4）。切换时释放已按住的键，避免游戏里残留按住状态。</summary>
+    private void SetInputChannel(int channel)
+    {
+        if(!InputChannel.Valid(channel))return;
+        _inputChannel=channel;
+        KeyInjection.Channel=channel;
+        _gameKeys?.Release();
+        TestLog.Add($"输入方式切换：方式 {channel+1} · {InputChannel.Name(channel)}");
+        SaveSettingsNow();
+    }
     private ForegroundKeyHold CreateWasdShiftHold()=>new(IsGameKeyTargetForeground,
         (target,down)=>(!down||IsGameKeyTargetForeground(target))&&SendRealKey(KEY_LSHIFT_SCAN,down),TestLog.Add);
     private static bool IsGameKeyTargetForeground(GameKeyTarget target)
@@ -37,14 +48,6 @@ public partial class MainForm
         if(target.Handle==IntPtr.Zero||!RepairIsWindow(target.Handle))return false;
         GetWindowThreadProcessId(target.Handle,out uint pid);
         return pid==target.ProcessId&&pid!=(uint)Environment.ProcessId;
-    }
-    private static bool PostGameKey(GameKeyTarget target,GameKey key,bool down,bool repeat=false)
-    {
-        if(!IsGameKeyTargetAlive(target))return false;
-        var title=new StringBuilder(256);GetWindowText(target.Handle,title,256);
-        if(title.ToString().Contains("手柄转换",StringComparison.OrdinalIgnoreCase)||title.ToString().Contains("ControllerProbe",StringComparison.OrdinalIgnoreCase)||title.ToString().Contains("Controller Bridge",StringComparison.OrdinalIgnoreCase))return false;
-        key=key.Canonical;
-        return PostMessage(target.Handle,down?WM_KEYDOWN:WM_KEYUP,(UIntPtr)key.Vk,(IntPtr)(long)KeyMessage.Flags(key,down,repeat));
     }
     [DllImport("user32.dll",EntryPoint="IsWindow")] private static extern bool RepairIsWindow(IntPtr handle);
 

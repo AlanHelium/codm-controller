@@ -6,13 +6,14 @@ public partial class MainForm
 {
     private void OpenConnectionRepair()
     {
-        string helper=Path.Combine(AppContext.BaseDirectory,"CODMControllerProbeUninstaller.exe");
+        string helper=Path.Combine(AppContext.BaseDirectory,"修复工具.exe");
+        if(!File.Exists(helper))helper=Path.Combine(AppContext.BaseDirectory,"CODMControllerProbeUninstaller.exe");
         if(!File.Exists(helper))
-        {MessageBox.Show(this,Lang.T("未找到配套修复工具，请使用完整安装包或独立连接修复包。","The maintenance helper is missing. Use the complete installer or connection repair kit."),Lang.T("连接修复","Connection repair"));return;}
+        {MessageBox.Show(this,Lang.T("未找到配套修复工具，请使用完整安装包或独立修复包。","The maintenance helper is missing. Use the complete installer or connection repair kit."),Lang.T("软件修复","Connection repair"));return;}
         try
         {
             if(!Version.TryParse(FileVersionInfo.GetVersionInfo(helper).FileVersion,out var version)||version<new Version(3,5,15,0))
-            {MessageBox.Show(this,Lang.T("配套修复工具版本过旧，请使用完整新版安装包或独立连接修复包。","The maintenance helper is outdated. Use the complete new package or standalone repair kit."),Lang.T("连接修复","Connection repair"));return;}
+            {MessageBox.Show(this,Lang.T("配套修复工具版本过旧，请使用完整新版安装包或独立修复包。","The maintenance helper is outdated. Use the complete new package or standalone repair kit."),Lang.T("软件修复","Connection repair"));return;}
             var start=new ProcessStartInfo(helper){UseShellExecute=true};
             start.ArgumentList.Add("--repair");
             start.ArgumentList.Add("--wait-pid");start.ArgumentList.Add(Environment.ProcessId.ToString());

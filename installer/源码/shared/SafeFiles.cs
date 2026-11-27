@@ -58,8 +58,9 @@ public static class SafeFiles
     public static List<string> RemoveInstalledFiles(string root,bool keepRecovery)
     {
         var record=InstallRecord.Load(Path.Combine(root,Product.RecordName));var retained=new List<string>();
+        if(!keepRecovery)retained.AddRange(LocalRecovery.Remove(root));
         var extras=record.Portable?new[]{PortablePackage.Manifest,"准备组件.cmd","清理卸载.cmd"}:Array.Empty<string>();
-        foreach(string name in Product.PayloadNames.Where(n=>n!=Product.UninstallName&&!n.StartsWith("components/")).Concat(new[]{"install.log","ViGEmBus-install.log","HidHide-install.log"}).Concat(extras))
+        foreach(string name in Product.PayloadNames.Where(n=>n!=Product.UninstallName&&!n.StartsWith("components/")).Concat(new[]{"install.log","ViGEmBus-install.log","HidHide-install.log","repair-files.json"}).Concat(extras).Where(n=>!keepRecovery||n!="repair-files.json"))
         {
             string path=Child(root,name);try{if(File.Exists(path))File.Delete(path);}catch(Exception ex){retained.Add(name+"："+ex.Message);}
         }
